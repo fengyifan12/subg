@@ -36,4 +36,11 @@ void app_uart_pc_send(const char *json_str);
  */
 void app_uart_pc_json_recv(void);
 
+/**
+ * 直接处理一行完整的 JSON 字符串（不含 '\n'）。
+ * 由 cli_uart_ftd.cpp 在 ProcessCommand 中检测到 '{' 开头时调用，
+ * 使 CLI 与 PC JSON 桥接可以在 UART0 上共存。
+ */
+void app_uart_pc_process_line(const char *line);
+
 #endif /* APP_UART_PC_H */

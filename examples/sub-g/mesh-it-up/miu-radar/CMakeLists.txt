@@ -1,4 +1,4 @@
-message("=== Configuring mesh-it-up: FTD ===")
+message("=== Configuring mesh-it-up: TEST ===")
 
 # ========================================
 # 1. Base setting
@@ -6,17 +6,15 @@ message("=== Configuring mesh-it-up: FTD ===")
 sdk_add_subdirectory_ifdef(CONFIG_FREERTOS ${CMAKE_CURRENT_LIST_DIR}/rtos)
 sdk_use_app_lib()
 
-if(CONFIG_MIU_DEVICE_TYPE_FTD)
-    add_definitions(-DOPENTHREAD_FTD)
-endif()
+add_definitions(-DOPENTHREAD_MTD)
 
 # ========================================
 # 3. Application layer setting
 # ========================================
 add_definitions(
     -DCONFIG_APP_TASK_UDP_LISTEN_PORT=5678
-    -DCONFIG_APP_TASK_OTA_ENABLE=0      # UART0 已改为 PC JSON 桥接，禁用 OTA download
-    -DCONFIG_APP_UART_PC_ENABLE=1       # 启用 Leader ↔ PC JSON 桥接（UART0）
+    -DCONFIG_APP_TASK_OTA_ENABLE=0
+    -DCONFIG_APP_TASK_SLEEP_POLL_PERIOD=1000
     -DCONFIG_TEST_TOOL_USE=0
 )
 
@@ -41,7 +39,6 @@ sdk_add_include_directories(
     ${MIU_COMMON_DIR}/include
     ${MIU_COMPONENTS_DIR}/miu_port/include
     ${CMAKE_CURRENT_LIST_DIR}/include
-    ${CMAKE_CURRENT_LIST_DIR}/crypto_aes128_encrypt/Include
 )
 
 # ========================================
@@ -51,21 +48,17 @@ target_sources(app PRIVATE
     ${MIU_COMMON_DIR}/src/app_led.c
     ${MIU_COMMON_DIR}/src/app_udp.c
     ${MIU_COMMON_DIR}/src/app_uart.c
-    ${MIU_COMMON_DIR}/src/app_ota.c
     ${MIU_COMMON_DIR}/src/app_mac_raw.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/cli_uart_ftd.cpp
-    # Centrak 自定义协议层（从独立工程移植）
+    ${MIU_COMMON_DIR}/src/cli_uart.cpp
+    # Centrak 协议层
     ${MIU_COMMON_DIR}/src/app_udp_comm.c
     ${MIU_COMMON_DIR}/src/app_path.c
     ${CMAKE_CURRENT_LIST_DIR}/src/app_net_mgm.c
     ${CMAKE_CURRENT_LIST_DIR}/src/app_ctrl.c
-    # Leader 设备表 + PC 桥接
-    ${CMAKE_CURRENT_LIST_DIR}/src/app_device_table.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/app_uart_pc.c
-    # 原有 FTD 文件
+    # 雷达 UART 驱动（覆盖 app_uart1_data_recv 弱符号）
+    ${CMAKE_CURRENT_LIST_DIR}/src/app_radar_uart.c
+    # 主逻辑
     ${CMAKE_CURRENT_LIST_DIR}/src/app_task.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/app_cli_cmd.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/ota_download_cmd_handler.c
 )
 
 # ========================================
@@ -76,7 +69,7 @@ sdk_set_main_file(${MIU_COMMON_DIR}/src/main.c)
 # ========================================
 # 6. Project
 # ========================================
-setup_project(miu-ftd)
+setup_project(miu-radar)
 
 # ========================================
 # 7. Link Static Library (miu_port_lib.a)

@@ -19,6 +19,7 @@
 #include "app_miu_config.h"
 #include "app_task.h"
 #include "app_uart.h"
+#include "app_uart_pc.h"
 #include "app_udp.h"
 #include "cli.h"
 #include "hosal_gpio.h"
@@ -476,6 +477,14 @@ void ota_state_change_cb(uint8_t state) {
 void otrInitUser(otInstance* instance) {
 
     otAppCliInit(instance);
+
+#if CONFIG_APP_UART_PC_ENABLE
+    /* 初始化 PC JSON 桥接行缓冲；
+     * 路由逻辑（'{' → JSON，其他 → CLI）在 cli_uart_ftd.cpp 的
+     * ProcessCommand() 中完成，无需禁用 OT CLI UART。 */
+    app_uart_pc_init();
+#endif
+
     otSetStateChangedCallback(instance, ot_stateChangeCallback, instance);
     otThreadRegisterNeighborTableCallback(instance, ot_neighborChangeCallback);
     app_sockInit(instance, CONFIG_APP_TASK_UDP_LISTEN_PORT);

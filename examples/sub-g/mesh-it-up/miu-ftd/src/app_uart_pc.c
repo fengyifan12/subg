@@ -87,6 +87,13 @@ void app_uart_pc_init(void)
     log_info("[uart_pc] PC bridge ready on UART0 (115200)");
 }
 
+void app_uart_pc_process_line(const char *line)
+{
+    if (line && line[0] != '\0') {
+        on_pc_json_line(line);
+    }
+}
+
 void app_uart_pc_send(const char *json_str)
 {
     if (!json_str) return;

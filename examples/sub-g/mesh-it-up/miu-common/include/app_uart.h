@@ -11,8 +11,10 @@ typedef enum {
 } uart_handler_data_sts_t;
 
 void app_uart_init(void);
+void app_uart_log_init(void);
 void app_uart0_enable(void);
 void app_uart0_disable(void);
+int app_uart0_data_send(const uint8_t *p_data, uint16_t data_len);
 
 /**
  * 从 UART0 环形缓冲中读取最多 p_data_len 字节到 p_data。

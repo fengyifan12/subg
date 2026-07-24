@@ -819,9 +819,14 @@ int vsprintf(char *buffer, const char *format, va_list ap)
 
 
 
+__attribute__((weak)) int app_log_output(uint8_t *data, uint32_t len)
+{
+	return uart_stdio_write(data, len);
+}
+
 void debug_print(uint8_t *data, uint32_t len)
 {
-	uart_stdio_write(data, len);
+	app_log_output(data, len);
 }
 
 static char string[512];

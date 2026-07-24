@@ -13,6 +13,7 @@
 #include "FreeRTOS.h"
 #include "app_hooks.h"
 #include "app_task.h"
+#include "app_uart.h"
 #include "cli.h"
 #include "hosal_dma.h"
 #include "hosal_gpio.h"
@@ -34,6 +35,10 @@
 
 #ifndef CONFIG_HOSAL_SOC_MAIN_ENTRY_TASK_SIZE
 #define CONFIG_HOSAL_SOC_MAIN_ENTRY_TASK_SIZE 8192
+#endif
+
+#ifndef CONFIG_APP_LOG_UART1_ENABLE
+#define CONFIG_APP_LOG_UART1_ENABLE 0
 #endif
 
 static void pin_mux_init(void) {
@@ -109,8 +114,13 @@ int main(void) {
     /*freertos heap init*/
     vHeapRegionsInt();
 
+#if CONFIG_APP_LOG_UART1_ENABLE
+    /*early log uart init*/
+    app_uart_log_init();
+#else
     /*debug uart init*/
     uart_stdio_init();
+#endif
 
     /*heap lock init*/
     heapLockInit();

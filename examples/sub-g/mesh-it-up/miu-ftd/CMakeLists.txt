@@ -15,12 +15,27 @@ endif()
 # ========================================
 add_definitions(
     -DCONFIG_APP_TASK_UDP_LISTEN_PORT=5678
-    -DCONFIG_APP_TASK_OTA_ENABLE=0      # UART0 已改为 PC JSON 桥接，禁用 OTA download
-    -DCONFIG_APP_UART_PC_ENABLE=1       # 启用 Leader ↔ PC JSON 桥接（UART0）
+    -DCONFIG_APP_TASK_OTA_ENABLE=0
+    -DCONFIG_APP_UART_PC_ENABLE=1
+    -DCONFIG_APP_LOG_UART1_ENABLE=1
+    -DCONFIG_APP_CLI_UART1_ENABLE=1
+    -DCONFIG_APP_UART0_PORT=0
+    -DCONFIG_APP_UART0_TX_PIN=17
+    -DCONFIG_APP_UART0_RX_PIN=16
+    -DCONFIG_APP_UART1_PORT=1
+    -DCONFIG_APP_UART1_TX_PIN=28
+    -DCONFIG_APP_UART1_RX_PIN=29
     -DCONFIG_TEST_TOOL_USE=0
 )
 
-if (CONFIG_BUILD_COMPONENT_ENHANCED_FLASH_DATASET)
+sdk_add_link_options(
+    -Wl,--wrap=otPlatUartEnable
+    -Wl,--wrap=otPlatUartDisable
+    -Wl,--wrap=otPlatUartSend
+    -Wl,--wrap=otPlatUartFlush
+)
+
+if(CONFIG_BUILD_COMPONENT_ENHANCED_FLASH_DATASET)
     if(CONFIG_FLASHCTRL_SECURE_EN)
         sdk_add_compile_options(
             -DEFD_START_ADDR=0x100F0000
@@ -54,15 +69,12 @@ target_sources(app PRIVATE
     ${MIU_COMMON_DIR}/src/app_ota.c
     ${MIU_COMMON_DIR}/src/app_mac_raw.c
     ${MIU_COMMON_DIR}/src/cli_uart.cpp
-    # Centrak 自定义协议层（从独立工程移植）
     ${MIU_COMMON_DIR}/src/app_udp_comm.c
     ${MIU_COMMON_DIR}/src/app_path.c
     ${CMAKE_CURRENT_LIST_DIR}/src/app_net_mgm.c
     ${CMAKE_CURRENT_LIST_DIR}/src/app_ctrl.c
-    # Leader 设备表 + PC 桥接
     ${CMAKE_CURRENT_LIST_DIR}/src/app_device_table.c
     ${CMAKE_CURRENT_LIST_DIR}/src/app_uart_pc.c
-    # 原有 FTD 文件
     ${CMAKE_CURRENT_LIST_DIR}/src/app_task.c
     ${CMAKE_CURRENT_LIST_DIR}/src/app_cli_cmd.c
     ${CMAKE_CURRENT_LIST_DIR}/src/ota_download_cmd_handler.c
@@ -86,4 +98,4 @@ target_link_libraries(app miu_port_lib)
 # ========================================
 # 8. Set System Clock
 # ========================================
-sdk_add_compile_options(-DSET_SYS_CLK=2) #0=32Mhz, 1=48Mhz, 2=64Mhz
+sdk_add_compile_options(-DSET_SYS_CLK=2) # 0=32Mhz, 1=48Mhz, 2=64Mhz

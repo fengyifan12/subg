@@ -28,7 +28,7 @@ static char s_line_buf[PC_LINE_BUF_SIZE];
 static int  s_line_len = 0;
 
 /* -----------------------------------------------------------------------
- * 内部：处理完整的一行 JSON（来自 PC 的 CONTROL 命令）
+ * 内部：处理完整的一行 JSON（来自 PC 的命令）
  * ----------------------------------------------------------------------- */
 static void on_pc_json_line(const char *line)
 {
@@ -38,6 +38,13 @@ static void on_pc_json_line(const char *line)
 
     if (miu_json_get_str(line, "type", msg_type, sizeof(msg_type)) < 0) {
         log_info("[uart_pc] rx: missing 'type'");
+        return;
+    }
+
+    /* ---- QUERY_TABLE：PC 请求重播设备表 ---- */
+    if (strcmp(msg_type, "QUERY_TABLE") == 0) {
+        log_info("[uart_pc] rx: QUERY_TABLE, replaying device table to PC");
+        app_device_table_iter_register_json(app_uart_pc_send);
         return;
     }
 

@@ -133,4 +133,11 @@ miu_dev_type_t app_device_type_from_str(const char *str);
 /** 设备类型枚举 → JSON 字符串 */
 const char *app_device_type_to_str(miu_dev_type_t type);
 
+/**
+ * 遍历设备表，对每条有效条目构造 REGISTER 格式 JSON，调用 cb(json_str)。
+ * json_str 使用栈上缓冲，cb 返回后即失效，cb 内勿保存指针。
+ * 用于 PC 请求设备表重播（QUERY_TABLE 命令）。
+ */
+void app_device_table_iter_register_json(void (*cb)(const char *json_str));
+
 #endif /* APP_DEVICE_TABLE_H */

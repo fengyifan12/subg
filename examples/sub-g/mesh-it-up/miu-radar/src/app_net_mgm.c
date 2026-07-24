@@ -33,7 +33,7 @@
 #define NET_MGM_CHALLENGE_TIMEOUT_SEC   35
 
 /* 本设备在 JSON 协议里使用的名称和类型（预烧录固定值） */
-#define TEST_DEV_NAME   "radar01"
+#define TEST_DEV_NAME   "radar_02"
 #define TEST_DEV_TYPE   "RADAR"
 #define TEST_FW_VER     "1.0.0"
 #define TEST_HW_VER     "A"
@@ -381,10 +381,8 @@ void net_mgm_init(void)
 
 /* -----------------------------------------------------------------------
  * 有人/无人状态上报（供检测逻辑调用）
- * 向 Leader 发送二进制 RADAR_REPORT 帧
+ * 向 Leader 发送 JSON REPORT：{"type":"REPORT","data":{"presence":N}}
  * ----------------------------------------------------------------------- */
-static uint8_t s_presence_seq = 0;
-
 void app_radar_net_report_presence(uint8_t presence)
 {
     if (!s_network_complete) {
@@ -393,25 +391,39 @@ void app_radar_net_report_presence(uint8_t presence)
     }
 
     otInstance *inst = otrGetInstance();
-    radar_report_t pkt = {
-        .header = RADAR_REPORT_HEADER,
-        .seq    = ++s_presence_seq,
-        .status = presence,
-    };
+    char ip_str[OT_IP6_ADDRESS_STRING_SIZE];
+    char json_buf[256];
+
+    const otIp6Address *ml_eid = otThreadGetMeshLocalEid(inst);
+    uint16_t rloc16 = otThreadGetRloc16(inst);
+    otIp6AddressToString(ml_eid, ip_str, sizeof(ip_str));
+
+    s_json_seq++;
+    snprintf(json_buf, sizeof(json_buf),
+             "{\"ver\":1,\"type\":\"REPORT\","
+             "\"dev_type\":\"" TEST_DEV_TYPE "\","
+             "\"dev_name\":\"" TEST_DEV_NAME "\","
+             "\"ip\":\"%s\","
+             "\"rloc16\":%u,"
+             "\"seq\":%u,"
+             "\"data\":{\"presence\":%u}}",
+             ip_str, (unsigned)rloc16, (unsigned)s_json_seq,
+             (unsigned)presence);
 
     otIp6Address dst = *otThreadGetRloc(inst);
     dst.mFields.m8[14] = 0xFC;
     dst.mFields.m8[15] = 0x00;
 
-    uint8_t *buf = pvPortMalloc(sizeof(radar_report_t));
+    uint16_t len = (uint16_t)strlen(json_buf);
+    uint8_t *buf = pvPortMalloc(len);
     if (!buf) { log_info("[mgm] presence report alloc fail"); return; }
-    memcpy(buf, &pkt, sizeof(radar_report_t));
+    memcpy(buf, json_buf, len);
 
-    if (app_udpSend(dst, buf, sizeof(radar_report_t), false) != 0){
+    if (app_udpSend(dst, buf, len, false) != 0) {
         log_info("[mgm] presence report send fail");
-    }
-    else{
-        log_info("[mgm] >> presence=%u seq=%u", presence, pkt.seq);
+    } else {
+        log_info("[mgm] >> REPORT presence=%u seq=%u",
+                 (unsigned)presence, (unsigned)s_json_seq);
     }
     vPortFree(buf);
 }

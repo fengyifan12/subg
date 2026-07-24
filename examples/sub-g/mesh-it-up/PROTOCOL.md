@@ -83,6 +83,7 @@
 | `REPORT` | child → leader | 状态/数据上报（事件驱动） | ❌ |
 | `CONTROL` | leader → child（经由 PC 下发） | 控制命令 | ✅ child 回 ACK |
 | `ACK` | 双向 | 对 REGISTER / CONTROL 的应答 | ❌ |
+| `QUERY_TABLE` | PC → leader（UART） | 请求 Leader 重播当前设备表 | ❌（leader 逐条发 REGISTER） |
 
 ---
 
@@ -151,7 +152,26 @@
 "data": { "delay_s": 30, "dist_m": 5 }
 ```
 `delay_s`: 有人离开后延迟报无人的秒数  
-`dist_m`: 检测距离上限，单位米
+`dist_m`: 检测距离上限，单位米  
+两个字段可同时出现，也可单独出现；同时出现时子设备串行执行，全部完成后回一次 ACK。
+
+**RADAR**（查询当前配置参数）
+```json
+"data": { "get": "delay_s" }
+```
+`get` 支持的值：
+- `"delay_s"` — 查询离开延迟
+- `"dist_m"` — 查询检测距离
+- `"all"` — 同时查询两项（子设备依次请求，各返回一条 REPORT）
+
+子设备收到 GET 后**立即回 ACK**（code=0），随后通过 **REPORT** 消息携带读取到的值：
+```json
+"data": { "delay_s": 30 }
+```
+或
+```json
+"data": { "dist_m": 5 }
+```
 
 **LIGHT**：只读设备，不接受 CONTROL
 
@@ -170,6 +190,16 @@
 | `0` | 成功 |
 | `1` | 未知命令 |
 | `2` | 执行失败 |
+
+### 6.5 QUERY_TABLE
+
+PC 发往 Leader，`data` 字段为空对象（或省略）：
+
+```json
+{"ver":1,"type":"QUERY_TABLE"}
+```
+
+Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一条 `REGISTER` 格式 JSON（字段含义与第 6.1 节相同，`seq` 固定为 `0` 表示重播）。若设备表为空则无任何回复。
 
 ---
 
@@ -205,6 +235,32 @@
 {"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":12,"data":{"delay_s":30,"dist_m":5}}
 ```
 
+### 雷达查询离开延迟（PC → leader → child）
+```json
+{"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":13,"data":{"get":"delay_s"}}
+```
+
+### PC 请求设备表（PC → leader UART）
+```json
+{"ver":1,"type":"QUERY_TABLE"}
+```
+
+### Leader 逐条重播 REGISTER（leader → PC UART，每条设备发一行）
+```json
+{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","ip":"fd11:ab::3","rloc16":1025,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
+{"ver":1,"type":"REGISTER","dev_type":"SOCKET","dev_name":"socket_01","ip":"fd11:ab::4","rloc16":2049,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
+```
+
+### 子设备立即回 ACK（child → leader → PC）
+```json
+{"ver":1,"type":"ACK","dev_type":"RADAR","dev_name":"radar_01","seq":5,"data":{"seq_ack":13,"code":0,"msg":"ok"}}
+```
+
+### 子设备 REPORT 查询结果（child → leader → PC）
+```json
+{"ver":1,"type":"REPORT","dev_type":"RADAR","dev_name":"radar_01","ip":"fd11:ab::3","rloc16":1025,"seq":6,"data":{"delay_s":30}}
+```
+
 ---
 
 ## 8. 消息流程图
@@ -225,6 +281,10 @@ PC 发出联动控制
   Leader ──[CONTROL]──► Child UDP
   Child 执行 → Child ──[ACK]──► Leader
   Leader ──[ACK + '\n']──► PC UART0
+
+PC 请求设备表
+  PC ──[QUERY_TABLE + '\n']──► Leader UART0
+  Leader 遍历设备表，逐条发送 REGISTER + '\n'──► PC UART0
 ```
 
 ---

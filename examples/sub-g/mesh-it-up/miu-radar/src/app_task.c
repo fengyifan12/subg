@@ -2,12 +2,12 @@
  * app_task.c (miu-radar)
  *
  * 覆盖弱符号 app_udp_comm_json_process()：
- *   - ACK  → 确认 REGISTER 已被 Leader 接受
- *   - CONTROL → 解析雷达控制动作，调用 app_radar_uart 驱动
+ *   - ACK     → 确认 REGISTER 已被 Leader 接受
+ *   - CONTROL → 解析雷达控制命令，调用 app_radar_uart 驱动
  *
- * 支持的 CONTROL action（由 Leader 中转 PC 下发）：
- *   "SET_PARAM"  {"param_id":<id>, "value":<val>}  → 5.2.7 配置传感器参数
- *   "GET_PARAM"  {"param_id":<id>}                 → 5.2.6 读取传感器参数
+ * 按 PROTOCOL.md 第 6.3 节，RADAR CONTROL data 字段：
+ *   SET：{"delay_s":<秒>, "dist_m":<米>}         可单独出现，也可同时出现（串行执行）
+ *   GET：{"get":"delay_s"|"dist_m"|"all"}        立即回 ACK，结果通过 REPORT 返回
  */
 
 #include <FreeRTOS.h>
@@ -111,23 +111,51 @@ typedef struct {
 
 /* 本设备在 JSON 协议里的标识（需与 app_net_mgm.c 保持一致） */
 #define RADAR_DEV_TYPE  "RADAR"
-#define RADAR_DEV_NAME  "radar01"
+#define RADAR_DEV_NAME  "radar_01"
 #define RADAR_FW_VER    "1.0.0"
 
-static uint8_t s_report_seq = 0;
+/* -----------------------------------------------------------------------
+ * 出站序列号与链式执行状态
+ * ----------------------------------------------------------------------- */
+static uint8_t  s_json_seq           = 0;   /* REPORT / ACK 共用，单调递增 */
+static int      s_ctrl_seq           = 0;   /* 当前在途 CONTROL 的 seq，用于回 ACK */
 
-/* 向 Leader 发送 JSON REPORT（在 OT 任务上下文中调用） */
-static void radar_send_json_report(const char *json_data_fragment)
+/* 链式 SET：delay_s ACK 之后继续设 dist_m */
+static bool     s_chain_set_dist     = false;
+static uint32_t s_chain_set_dist_val = 0;
+
+/* 链式 GET：第一个 GET ACK 之后继续请求下一个参数 */
+static uint16_t s_chain_get_param    = 0;
+
+/* -----------------------------------------------------------------------
+ * 发送辅助
+ * ----------------------------------------------------------------------- */
+static void radar_udp_send(const char *buf, uint16_t len)
 {
     otInstance   *inst = otrGetInstance();
-    char          ip_str[OT_IP6_ADDRESS_STRING_SIZE];
-    char          buf[256];
+    otIp6Address  dst  = *otThreadGetRloc(inst);
+    dst.mFields.m8[14] = 0xFC;
+    dst.mFields.m8[15] = 0x00;
+    uint8_t *p = pvPortMalloc(len);
+    if (!p) { log_info("[radar] send alloc fail"); return; }
+    memcpy(p, buf, len);
+    if (app_udpSend(dst, p, len, false) != 0)
+        log_info("[radar] send fail");
+    vPortFree(p);
+}
+
+/* 发送 REPORT；data_content 为 "data":{} 花括号内的内容 */
+static void radar_send_json_report(const char *data_content)
+{
+    otInstance  *inst = otrGetInstance();
+    char         ip_str[OT_IP6_ADDRESS_STRING_SIZE];
+    char         buf[256];
 
     const otIp6Address *ml_eid = otThreadGetMeshLocalEid(inst);
     uint16_t rloc16 = otThreadGetRloc16(inst);
     otIp6AddressToString(ml_eid, ip_str, sizeof(ip_str));
 
-    s_report_seq++;
+    s_json_seq++;
     snprintf(buf, sizeof(buf),
              "{\"ver\":1,\"type\":\"REPORT\","
              "\"dev_type\":\"" RADAR_DEV_TYPE "\","
@@ -135,47 +163,85 @@ static void radar_send_json_report(const char *json_data_fragment)
              "\"ip\":\"%s\","
              "\"rloc16\":%u,"
              "\"seq\":%u,"
-             "%s}",
-             ip_str, (unsigned)rloc16, (unsigned)s_report_seq,
-             json_data_fragment);
+             "\"data\":{%s}}",
+             ip_str, (unsigned)rloc16, (unsigned)s_json_seq,
+             data_content);
 
-    otIp6Address dst = *otThreadGetRloc(inst);
-    dst.mFields.m8[14] = 0xFC;
-    dst.mFields.m8[15] = 0x00;
-
-    uint16_t len = (uint16_t)strlen(buf);
-    uint8_t *p = pvPortMalloc(len);
-    if (!p) { log_info("[radar] report alloc fail"); return; }
-    memcpy(p, buf, len);
-    if (app_udpSend(dst, p, len, false) != 0){
-        log_info("[radar] report send fail");
-    }   
-    else{
-        log_info("[radar] >> REPORT %s", buf);
-    }
-    vPortFree(p);
+    log_info("[radar] >> REPORT %s", buf);
+    radar_udp_send(buf, (uint16_t)strlen(buf));
 }
 
-/* SET_PARAM ACK 回调：向 Leader 上报操作结果 */
+/* 发送 ACK；seq_ack 为待确认的 CONTROL seq */
+static void radar_send_json_ack(int seq_ack, int code)
+{
+    char buf[256];
+    s_json_seq++;
+    snprintf(buf, sizeof(buf),
+             "{\"ver\":1,\"type\":\"ACK\","
+             "\"dev_type\":\"" RADAR_DEV_TYPE "\","
+             "\"dev_name\":\"" RADAR_DEV_NAME "\","
+             "\"seq\":%u,"
+             "\"data\":{\"seq_ack\":%d,\"code\":%d,\"msg\":\"%s\"}}",
+             (unsigned)s_json_seq,
+             seq_ack, code,
+             code == 0 ? "ok" : "fail");
+
+    log_info("[radar] >> ACK seq_ack=%d code=%d", seq_ack, code);
+    radar_udp_send(buf, (uint16_t)strlen(buf));
+}
+
+/* -----------------------------------------------------------------------
+ * 雷达参数应答回调
+ * 由 app_radar_uart.c 在 OT 任务上下文中调用
+ * ----------------------------------------------------------------------- */
+
+/* SET_PARAM ACK 回调：UART 执行完成，回 ACK 给 Leader */
 static void on_set_param_ack(uint16_t param_id, uint16_t status)
 {
-    char frag[64];
-    snprintf(frag, sizeof(frag),
-             "\"action\":\"SET_PARAM_ACK\","
-             "\"param_id\":%u,\"status\":%u",
+    log_info("[radar] set_ack param=0x%04X status=%u",
              (unsigned)param_id, (unsigned)status);
-    radar_send_json_report(frag);
+
+    /* 链式执行：delay_s 设完后继续设 dist_m */
+    if (param_id == RADAR_PARAM_DISAPPEAR_DELAY && s_chain_set_dist) {
+        s_chain_set_dist = false;
+        app_radar_uart_set_param(RADAR_PARAM_MAX_DISTANCE, s_chain_set_dist_val);
+        return;   /* 等 dist_m 的 ACK 再回 CONTROL ACK */
+    }
+
+    radar_send_json_ack(s_ctrl_seq, status == 0 ? 0 : 2);
 }
 
-/* GET_PARAM ACK 回调：向 Leader 上报读取到的参数值 */
+/* GET_PARAM ACK 回调：UART 返回数据，通过 REPORT 上报参数值 */
 static void on_get_param_ack(uint16_t param_id, uint16_t status, uint32_t value)
 {
-    char frag[80];
-    snprintf(frag, sizeof(frag),
-             "\"action\":\"GET_PARAM_ACK\","
-             "\"param_id\":%u,\"status\":%u,\"param_val\":%lu",
+    log_info("[radar] get_ack param=0x%04X status=%u value=%lu",
              (unsigned)param_id, (unsigned)status, (unsigned long)value);
-    radar_send_json_report(frag);
+
+    if (status == 0) {
+        char frag[48];
+        if (param_id == RADAR_PARAM_MAX_DISTANCE) {
+            /* UART 单位 0.1m → 转回米 */
+            unsigned long dist_m_int = value / 10u;      // 整数部分
+            unsigned long dist_m_frac = value % 10u;     // 小数部分（一位）
+            snprintf(frag, sizeof(frag),
+                    "\"dist_m\":%lu.%lu", dist_m_int, dist_m_frac);
+        } else if (param_id == RADAR_PARAM_DISAPPEAR_DELAY) {
+            snprintf(frag, sizeof(frag),
+                     "\"delay_s\":%lu", (unsigned long)value);
+        } else {
+            snprintf(frag, sizeof(frag),
+                     "\"param_0x%04X\":%lu",
+                     (unsigned)param_id, (unsigned long)value);
+        }
+        radar_send_json_report(frag);
+    }
+
+    /* 链式执行："all" 时继续请求下一个参数 */
+    if (s_chain_get_param) {
+        uint16_t next = s_chain_get_param;
+        s_chain_get_param = 0;
+        app_radar_uart_get_param(next);
+    }
 }
 
 /* -----------------------------------------------------------------------
@@ -207,25 +273,58 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
 
     /* ---- CONTROL：Leader 转发 PC 的控制命令 ---- */
     } else if (strcmp(msg_type, "CONTROL") == 0) {
-        char action[24] = {0};
-        miu_json_get_str(json, "action", action, sizeof(action));
+        /* 保存 CONTROL seq，用于回 ACK */
+        miu_json_get_int(json, "seq", &s_ctrl_seq);
 
-        if (strcmp(action, "SET_PARAM") == 0) {
-            int param_id = 0, value = 0;
-            miu_json_get_int(json, "param_id", &param_id);
-            miu_json_get_int(json, "value",    &value);
-            log_info("[radar] << SET_PARAM param_id=0x%04X value=%d",
-                     param_id, value);
-            app_radar_uart_set_param((uint16_t)param_id, (uint32_t)value);
+        /* ---- GET_PARAM：data 中含 "get" 字段 ---- */
+        char get_field[16] = {0};
+        if (miu_json_get_str(json, "get", get_field, sizeof(get_field)) >= 0) {
+            log_info("[radar] << CONTROL GET '%s' seq=%d", get_field, s_ctrl_seq);
+            radar_send_json_ack(s_ctrl_seq, 0);   /* 立即回 ACK，结果通过 REPORT 异步返回 */
 
-        } else if (strcmp(action, "GET_PARAM") == 0) {
-            int param_id = 0;
-            miu_json_get_int(json, "param_id", &param_id);
-            log_info("[radar] << GET_PARAM param_id=0x%04X", param_id);
-            app_radar_uart_get_param((uint16_t)param_id);
+            s_chain_get_param = 0;
+            if (strcmp(get_field, "delay_s") == 0) {
+                app_radar_uart_get_param(RADAR_PARAM_DISAPPEAR_DELAY);
+            } else if (strcmp(get_field, "dist_m") == 0) {
+                app_radar_uart_get_param(RADAR_PARAM_MAX_DISTANCE);
+            } else if (strcmp(get_field, "all") == 0) {
+                /* 先 GET delay_s，ACK 回来后链式 GET dist_m */
+                s_chain_get_param = RADAR_PARAM_MAX_DISTANCE;
+                app_radar_uart_get_param(RADAR_PARAM_DISAPPEAR_DELAY);
+            } else {
+                log_info("[radar] << CONTROL GET: unknown field '%s'", get_field);
+            }
+            return;
+        }
 
+        /* ---- SET_PARAM：data 中含语义字段 delay_s / dist_m ---- */
+        int delay_s = -1, dist_m = -1;
+        bool has_delay = (miu_json_get_int(json, "delay_s", &delay_s) == 0);
+        bool has_dist  = (miu_json_get_int(json, "dist_m",  &dist_m)  == 0);
+
+        if (!has_delay && !has_dist) {
+            log_info("[radar] << CONTROL: no recognized param (seq=%d)", s_ctrl_seq);
+            radar_send_json_ack(s_ctrl_seq, 1);   /* code=1: 未知命令 */
+            return;
+        }
+
+        log_info("[radar] << CONTROL SET delay_s=%d dist_m=%d seq=%d",
+                 has_delay ? delay_s : -1,
+                 has_dist  ? dist_m  : -1,
+                 s_ctrl_seq);
+
+        s_chain_set_dist = false;
+        if (has_delay && has_dist) {
+            /* 两个参数同时下发：先设 delay_s，ACK 后再设 dist_m */
+            s_chain_set_dist     = true;
+            s_chain_set_dist_val = (uint32_t)((unsigned)dist_m * 10u); /* 米→0.1m */
+            app_radar_uart_set_param(RADAR_PARAM_DISAPPEAR_DELAY, (uint32_t)delay_s);
+        } else if (has_delay) {
+            app_radar_uart_set_param(RADAR_PARAM_DISAPPEAR_DELAY, (uint32_t)delay_s);
         } else {
-            log_info("[radar] << CONTROL unknown action '%s'", action);
+            /* dist_m 单位米，UART 参数单位 0.1m */
+            app_radar_uart_set_param(RADAR_PARAM_MAX_DISTANCE,
+                                     (uint32_t)((unsigned)dist_m * 10u));
         }
 
     } else {

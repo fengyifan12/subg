@@ -1,10 +1,11 @@
 /*
  * app_radar_uart.c — 雷达传感器 UART 协议驱动（中断驱动 RX）
  *
- * TX: hosal_uart_send(&uartstdio, frame, len)
- * RX: 直接在 uartstdio 上注册私有 RX ISR，数据写入私有环形缓冲，
+ * TX: hosal_uart_send(&s_radar_uart1, frame, len)
+ * RX: 在独立 UART1 上注册私有 RX ISR，数据写入私有环形缓冲，
  *     ISR 通过 ot_app_task_post() 通知 OT 任务处理，无轮询定时器。
  *
+ * UART1 引脚通过 Kconfig 配置（默认 TX=28, RX=29）；
  * miu-common 零修改。
  *
  * 帧格式（LD2410 兼容）：
@@ -20,17 +21,30 @@
  */
 
 #include "app_radar_uart.h"
-#include "uart_stdio.h"     /* uartstdio */
 #include "hosal_uart.h"     /* hosal_uart_send(), hosal_uart_callback_set(), hosal_uart_receive() */
 #include "miu_port.h"       /* ot_app_task_post() */
-#include "mcu.h"            /* __NVIC_SetPriority, Uart0_IRQn */
+#include "mcu.h"            /* __NVIC_SetPriority, Uart1_IRQn */
 #include "log.h"
 #include <string.h>
 #include <FreeRTOS.h>
 #include <timers.h>         /* ACK 超时定时器 */
 
-/* uartstdio 在 uart_stdio.c 中声明，与 FTD 的 app_uart_pc.c 用法一致 */
-extern hosal_uart_dev_t uartstdio;
+/* -----------------------------------------------------------------------
+ * UART1 设备（雷达专用，与 UART0 stdio 互不干扰）
+ * TX/RX 引脚通过 Kconfig 选项 CONFIG_RADAR_UART1_TX_PIN /
+ * CONFIG_RADAR_UART1_RX_PIN 配置，默认 28 / 29。
+ * ----------------------------------------------------------------------- */
+#ifndef CONFIG_RADAR_UART1_TX_PIN
+#define CONFIG_RADAR_UART1_TX_PIN  28
+#endif
+#ifndef CONFIG_RADAR_UART1_RX_PIN
+#define CONFIG_RADAR_UART1_RX_PIN  29
+#endif
+
+HOSAL_UART_DEV_DECL(s_radar_uart1, 1,
+                    CONFIG_RADAR_UART1_TX_PIN,
+                    CONFIG_RADAR_UART1_RX_PIN,
+                    UART_BAUDRATE_Baud115200)
 
 /* -----------------------------------------------------------------------
  * 常量
@@ -229,10 +243,10 @@ static void radar_rx_process(void *arg)
 }
 
 /* -----------------------------------------------------------------------
- * UART0 RX 中断回调（ISR 上下文）：
+ * UART1 RX 中断回调（ISR 上下文）：
  *   填充私有环形缓冲，然后通知 OT 任务处理，不使用轮询定时器。
  * ----------------------------------------------------------------------- */
-static int radar_uart0_rx_isr(void *p_arg)
+static int radar_uart1_rx_isr(void *p_arg)
 {
     hosal_uart_dev_t *uart = (hosal_uart_dev_t *)p_arg;
     uint8_t tmp[32];
@@ -252,7 +266,7 @@ static int radar_uart0_rx_isr(void *p_arg)
 }
 
 /* -----------------------------------------------------------------------
- * 发帧辅助（TX 用 hosal_uart_send(&uartstdio, ...)，与 FTD 的 app_uart_pc_send 相同底层）
+ * 发帧辅助（TX 用 hosal_uart_send(&s_radar_uart1, ...)）
  * ----------------------------------------------------------------------- */
 static void radar_send_frame(uint16_t cmd,
                               const uint8_t *payload, uint16_t payload_len)
@@ -270,7 +284,7 @@ static void radar_send_frame(uint16_t cmd,
     memcpy(p, k_tail, 4); p += 4;
 
     uint16_t total = (uint16_t)(p - frame);
-    hosal_uart_send(&uartstdio, frame, total);
+    hosal_uart_send(&s_radar_uart1, frame, total);
     log_info_hexdump("[radar_uart] tx", frame, total);
 }
 
@@ -286,15 +300,18 @@ void app_radar_uart_init(radar_set_ack_cb_t set_cb, radar_get_ack_cb_t get_cb)
     s_rx_wr = 0;
     s_rx_rd = 0;
 
-    /* 直接在 uartstdio (UART0) 上注册私有 RX ISR，替换 uart_stdio 默认回调。
-     * uart_stdio_init() 已在 BSP 阶段调用 HOSAL_UART_MODE_INT_RX，
-     * 这里只需替换回调，无需重新设置中断模式。
-     * NVIC priority 3：与 FTD OTA 模式一致，高于射频（4）防止 FIFO 溢出。 */
-    hosal_uart_callback_set(&uartstdio, HOSAL_UART_RX_CALLBACK,
-                            radar_uart0_rx_isr, &uartstdio);
-    __NVIC_SetPriority(Uart0_IRQn, 3);
+    /* 初始化 UART1，独立于 UART0 stdio。
+     * 配置为中断 RX 模式，注册私有 ISR。
+     * NVIC priority 3：高于射频（4）防止 FIFO 溢出。 */
+    hosal_uart_init(&s_radar_uart1);
+    hosal_uart_callback_set(&s_radar_uart1, HOSAL_UART_RX_CALLBACK,
+                            radar_uart1_rx_isr, &s_radar_uart1);
+    hosal_uart_ioctl(&s_radar_uart1, HOSAL_UART_MODE_SET,
+                     (void *)HOSAL_UART_MODE_INT_RX);
+    __NVIC_SetPriority(Uart1_IRQn, 3);
 
-    log_info("[radar_uart] init OK (UART0, interrupt-driven)");
+    log_info("[radar_uart] init OK (UART1, TX=%d, RX=%d, interrupt-driven)",
+             CONFIG_RADAR_UART1_TX_PIN, CONFIG_RADAR_UART1_RX_PIN);
 }
 
 void app_radar_uart_set_param(uint16_t param_id, uint32_t value)

@@ -4,6 +4,7 @@
 
 #include "app_device_table.h"
 #include <string.h>
+#include <stdio.h>
 #include "FreeRTOS.h"
 #include "task.h"
 #include "log.h"
@@ -140,5 +141,38 @@ const char *app_device_type_to_str(miu_dev_type_t type)
     case MIU_DEV_TYPE_RADAR:   return "RADAR";
     case MIU_DEV_TYPE_RGBCW:   return "RGBCW";
     default:                    return "UNKNOWN";
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * 遍历设备表，逐条构造 REGISTER JSON 并回调
+ * ----------------------------------------------------------------------- */
+void app_device_table_iter_register_json(void (*cb)(const char *json_str))
+{
+    if (!cb) return;
+
+    char json_buf[256];
+    char ip_str[OT_IP6_ADDRESS_STRING_SIZE];
+
+    for (int i = 0; i < MIU_MAX_DEVICES; i++) {
+        miu_device_info_t *d = &s_dev_table.devices[i];
+        if (!d->valid) continue;
+
+        otIp6AddressToString(&d->ip, ip_str, sizeof(ip_str));
+        snprintf(json_buf, sizeof(json_buf),
+                 "{\"ver\":1,\"type\":\"REGISTER\","
+                 "\"dev_type\":\"%s\","
+                 "\"dev_name\":\"%s\","
+                 "\"ip\":\"%s\","
+                 "\"rloc16\":%u,"
+                 "\"seq\":0,"
+                 "\"data\":{\"fw_ver\":\"%s\",\"hw_ver\":\"%s\"}}",
+                 app_device_type_to_str(d->dev_type),
+                 d->dev_name,
+                 ip_str,
+                 (unsigned)d->rloc16,
+                 d->fw_ver,
+                 d->hw_ver);
+        cb(json_buf);
     }
 }

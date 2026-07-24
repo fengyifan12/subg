@@ -1,9 +1,10 @@
 /*
  * app_radar_uart.h — 雷达传感器 UART 协议驱动
  *
- * 与 FTD 工程使用 UART0 和 PC 互通完全对称，miu-common 零修改：
- *   TX: hosal_uart_send(&uartstdio, ...)
- *   RX: app_uart0_rx_read()  + 5ms 周期定时器轮询
+ * 使用独立 UART1（TX/RX 引脚由 Kconfig 配置，默认 TX=28/RX=29），
+ * 与 UART0 stdio 完全分离，miu-common 零修改：
+ *   TX: hosal_uart_send(&s_radar_uart1, ...)
+ *   RX: 中断驱动，ISR 填入私有环形缓冲，OT 任务消费
  *
  * 帧格式（LD2410 兼容）：
  *   Header  (4B): FD FC FB FA

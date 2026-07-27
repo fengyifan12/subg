@@ -2,7 +2,7 @@
  * app_net_mgm.c (miu-radar)
  *
  * MTD 网管流程：Challenge/Accepted 握手完成后，向 Leader 发送 JSON REGISTER。
- * 提供 app_radar_net_report_presence() 供检测逻辑调用，向 Leader 上报有人/无人。
+ * 提供 app_radar_net_report_presence() 供 GPIO 检测逻辑调用，向 Leader 上报有人/无人。
  *
  * JSON REGISTER：
  *   dev_name = "radar01"
@@ -33,7 +33,7 @@
 #define NET_MGM_CHALLENGE_TIMEOUT_SEC   35
 
 /* 本设备在 JSON 协议里使用的名称和类型（预烧录固定值） */
-#define TEST_DEV_NAME   "radar_02"
+#define TEST_DEV_NAME   "radar_01"
 #define TEST_DEV_TYPE   "RADAR"
 #define TEST_FW_VER     "1.0.0"
 #define TEST_HW_VER     "A"

@@ -57,6 +57,7 @@ target_sources(app PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src/app_ctrl.c
     # 雷达 UART 驱动（覆盖 app_uart1_data_recv 弱符号）
     ${CMAKE_CURRENT_LIST_DIR}/src/app_radar_uart.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/app_radar_gpio.c
     # 主逻辑
     ${CMAKE_CURRENT_LIST_DIR}/src/app_task.c
 )

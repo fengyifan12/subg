@@ -6,7 +6,7 @@
  *   - CONTROL → 解析雷达控制命令，调用 app_radar_uart 驱动
  *
  * 按 PROTOCOL.md 第 6.3 节，RADAR CONTROL data 字段：
- *   SET：{"delay_s":<秒>, "dist_m":<米>}         可单独出现，也可同时出现（串行执行）
+ *   SET：{"delay_s":<秒>, "dist_m":<米，一位小数>}  可单独出现，也可同时出现（串行执行）
  *   GET：{"get":"delay_s"|"dist_m"|"all"}        立即回 ACK，结果通过 REPORT 返回
  */
 
@@ -22,6 +22,7 @@
 #include "app_task.h"
 #include "app_udp.h"
 #include "app_radar_uart.h"
+#include "app_radar_gpio.h"
 #include "cli.h"
 #include "hosal_lpm.h"
 #include "hosal_rf.h"
@@ -298,9 +299,10 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
         }
 
         /* ---- SET_PARAM：data 中含语义字段 delay_s / dist_m ---- */
-        int delay_s = -1, dist_m = -1;
+        int    delay_s = -1;
+        double dist_m  = -1.0;
         bool has_delay = (miu_json_get_int(json, "delay_s", &delay_s) == 0);
-        bool has_dist  = (miu_json_get_int(json, "dist_m",  &dist_m)  == 0);
+        bool has_dist  = (miu_json_get_double(json, "dist_m", &dist_m) == 0);
 
         if (!has_delay && !has_dist) {
             log_info("[radar] << CONTROL: no recognized param (seq=%d)", s_ctrl_seq);
@@ -308,23 +310,28 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
             return;
         }
 
-        log_info("[radar] << CONTROL SET delay_s=%d dist_m=%d seq=%d",
-                 has_delay ? delay_s : -1,
-                 has_dist  ? dist_m  : -1,
-                 s_ctrl_seq);
+        if (has_dist) {
+            int dist_i = (int)dist_m;
+            int dist_f = (int)((dist_m - (double)dist_i) * 10.0);
+            log_info("[radar] << CONTROL SET delay_s=%d dist_m=%d.%d seq=%d",
+                     has_delay ? delay_s : -1, dist_i, dist_f, s_ctrl_seq);
+        } else {
+            log_info("[radar] << CONTROL SET delay_s=%d seq=%d",
+                     delay_s, s_ctrl_seq);
+        }
 
         s_chain_set_dist = false;
         if (has_delay && has_dist) {
             /* 两个参数同时下发：先设 delay_s，ACK 后再设 dist_m */
             s_chain_set_dist     = true;
-            s_chain_set_dist_val = (uint32_t)((unsigned)dist_m * 10u); /* 米→0.1m */
+            s_chain_set_dist_val = (uint32_t)(dist_m * 10.0); /* 米→0.1m */
             app_radar_uart_set_param(RADAR_PARAM_DISAPPEAR_DELAY, (uint32_t)delay_s);
         } else if (has_delay) {
             app_radar_uart_set_param(RADAR_PARAM_DISAPPEAR_DELAY, (uint32_t)delay_s);
         } else {
-            /* dist_m 单位米，UART 参数单位 0.1m */
+            /* dist_m 单位米（一位小数），UART 参数单位 0.1m */
             app_radar_uart_set_param(RADAR_PARAM_MAX_DISTANCE,
-                                     (uint32_t)((unsigned)dist_m * 10u));
+                                     (uint32_t)(dist_m * 10.0));
         }
 
     } else {
@@ -441,6 +448,7 @@ void otrInitUser(otInstance* instance)
     app_led_pin_init();
     otdatasetInit(instance);
     app_radar_uart_init(on_set_param_ack, on_get_param_ack);
+    app_radar_gpio_init();
     app_udp_comm_init();
 #if !CFG_USE_CENTRAK_CONFIG
     otIp6SetEnabled(instance, true);

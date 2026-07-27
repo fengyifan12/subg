@@ -26,4 +26,12 @@ config RADAR_UART1_RX_PIN
       GPIO pin used as UART1 RX to communicate with the radar sensor.
       Default 29 matches the RF1301-EVB header.
 
+config RADAR_PRESENCE_GPIO_PIN
+    int "Radar presence detect GPIO pin number"
+    range 0 31
+    default 30
+    help
+      GPIO pin used to detect radar presence output.
+      High level reports presence=1, low level reports presence=0.
+
 endmenu

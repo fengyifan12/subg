@@ -65,4 +65,30 @@ static inline int miu_json_get_int(const char *json, const char *key, int *out)
     return 0;
 }
 
+/*
+ * 在 json 字符串中查找 "key":number，支持一位小数（如 0.5、1.5）。
+ * 返回 0 成功，-1 未找到或格式无效。
+ */
+static inline int miu_json_get_double(const char *json, const char *key, double *out)
+{
+    char search[64];
+    snprintf(search, sizeof(search), "\"%s\"", key);
+
+    const char *p = strstr(json, search);
+    if (!p) return -1;
+
+    p += strlen(search);
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != ':') return -1;
+    p++;
+    while (*p == ' ' || *p == '\t') p++;
+
+    if (*p != '-' && *p != '+' && (*p < '0' || *p > '9')) return -1;
+
+    char *end = NULL;
+    *out = strtod(p, &end);
+    if (end == p) return -1;
+    return 0;
+}
+
 #endif /* MIU_JSON_H */

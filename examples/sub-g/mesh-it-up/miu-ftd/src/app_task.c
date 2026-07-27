@@ -524,6 +524,9 @@ void app_common_init() {
     /*phy init*/
     hosal_rf_init(HOSAL_RF_MODE_RUCI_CMD);
 
+    /*app uart init*/
+    app_uart_init();
+
     log_info("Mesh It Up FTD");
     log_info("Band               : %s", band_str[sPhyFrequencyBand]);
     log_info("Data Rate          : %s", data_rate_str[sPhyDataRate]);
@@ -590,8 +593,6 @@ void app_common_init() {
     radiochrange.frequencySpacing = OPENTHREAD_CONFIG_CHANNEL_SPACING;
     otPlatRadioSetChannelRange(radiochrange);
 
-    /*app init*/
-    app_uart_init();
     /*mesh it up task start*/
     miuStart();
 }

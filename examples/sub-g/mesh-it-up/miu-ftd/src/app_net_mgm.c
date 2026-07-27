@@ -41,6 +41,7 @@
 #include "miu_bin_version.h"
 #include "app_device_table.h"
 #include "app_uart_pc.h"
+#include "app_uart.h"
 /* EnhancedFlashDataset：替代原 flashds.h，用 key-value 接口存储 Partition ID。
  * EFD_USING_ENV 在 efd_cfg.h 默认已开启，efd_get/set_env_blob 可直接使用。
  * 注意：net_mgm_init() 调用时 enhanced_flash_dataset_init() 需已执行（由框架启动时完成）。*/
@@ -918,12 +919,6 @@ void net_mgm_init(void)
 {
     log_info("[mgm] Centrak network management init");
 
-    /* 初始化 Leader 设备表与 PC UART0 桥接 */
-    if (net_mgm_check_leader_pin()) {
-        app_device_table_init();
-        app_uart_pc_init();
-    }
-
     /* 配置 Leader 检测引脚为输入（无中断，轮询电平）
      * 必须使能内部上拉：悬空时读高（非 Leader），接地时读低（是 Leader）。
      * 不加上拉会导致悬空引脚读到 0，设备总是选举为 Leader。 */
@@ -935,6 +930,13 @@ void net_mgm_init(void)
         };
         hosal_gpio_cfg_input(NET_MGM_LEADER_GPIO_PIN, pin_cfg);
         hosal_pin_set_pullopt(NET_MGM_LEADER_GPIO_PIN, HOSAL_PULL_UP_100K);
+    }
+
+    /* 初始化 Leader 设备表与 PC UART0 桥接 */
+    if (net_mgm_check_leader_pin()) {
+        app_device_table_init();
+        app_uart_pc_init();
+        app_uart0_enable();
     }
 
     /* 创建 1s 心跳定时器 */

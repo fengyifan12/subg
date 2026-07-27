@@ -15,12 +15,27 @@ endif()
 # ========================================
 add_definitions(
     -DCONFIG_APP_TASK_UDP_LISTEN_PORT=5678
-    -DCONFIG_APP_TASK_OTA_ENABLE=0      # UART0 已改为 PC JSON 桥接，禁用 OTA download
-    -DCONFIG_APP_UART_PC_ENABLE=1       # 启用 Leader ↔ PC JSON 桥接（UART0）
+    -DCONFIG_APP_TASK_OTA_ENABLE=0
+    -DCONFIG_APP_UART_PC_ENABLE=1
+    -DCONFIG_APP_LOG_UART1_ENABLE=1
+    -DCONFIG_APP_CLI_UART1_ENABLE=1
+    -DCONFIG_APP_UART0_PORT=0
+    -DCONFIG_APP_UART0_TX_PIN=17
+    -DCONFIG_APP_UART0_RX_PIN=16
+    -DCONFIG_APP_UART1_PORT=1
+    -DCONFIG_APP_UART1_TX_PIN=28
+    -DCONFIG_APP_UART1_RX_PIN=29
     -DCONFIG_TEST_TOOL_USE=0
 )
 
-if (CONFIG_BUILD_COMPONENT_ENHANCED_FLASH_DATASET)
+sdk_add_link_options(
+    -Wl,--wrap=otPlatUartEnable
+    -Wl,--wrap=otPlatUartDisable
+    -Wl,--wrap=otPlatUartSend
+    -Wl,--wrap=otPlatUartFlush
+)
+
+if(CONFIG_BUILD_COMPONENT_ENHANCED_FLASH_DATASET)
     if(CONFIG_FLASHCTRL_SECURE_EN)
         sdk_add_compile_options(
             -DEFD_START_ADDR=0x100F0000

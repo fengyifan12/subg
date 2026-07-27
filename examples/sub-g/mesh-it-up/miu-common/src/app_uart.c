@@ -13,13 +13,48 @@
 #  endif
 #endif
 #include "task.h"
-#include "uart_stdio.h"
 #include "util_queue.h"
 
 #include <timers.h>
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "task.h"
+
+#ifndef CONFIG_APP_CLI_UART1_ENABLE
+#define CONFIG_APP_CLI_UART1_ENABLE 0
+#endif
+
+#ifndef CONFIG_APP_LOG_UART1_ENABLE
+#define CONFIG_APP_LOG_UART1_ENABLE 0
+#endif
+
+#ifndef CONFIG_APP_UART0_PORT
+#define CONFIG_APP_UART0_PORT 0
+#endif
+
+#ifndef CONFIG_APP_UART0_TX_PIN
+#define CONFIG_APP_UART0_TX_PIN 17
+#endif
+
+#ifndef CONFIG_APP_UART0_RX_PIN
+#define CONFIG_APP_UART0_RX_PIN 16
+#endif
+
+#ifndef CONFIG_APP_UART1_PORT
+#define CONFIG_APP_UART1_PORT 1
+#endif
+
+#ifndef CONFIG_APP_UART1_TX_PIN
+#define CONFIG_APP_UART1_TX_PIN 28
+#endif
+
+#ifndef CONFIG_APP_UART1_RX_PIN
+#define CONFIG_APP_UART1_RX_PIN 29
+#endif
+
+#if CONFIG_APP_CLI_UART1_ENABLE
+#include "uart.h"
+#endif
 
 #define UART_HANDLER_RX_CACHE_SIZE 128
 #define RX_BUFF_SIZE               1024
@@ -42,16 +77,36 @@ typedef struct uart_io {
 
 static uart_io_t g_uart0_rx_io = {.start = 0, .end = 0, .recvLen = 0};
 static uart_io_t g_uart1_rx_io = {.start = 0, .end = 0, .recvLen = 0};
-HOSAL_UART_DEV_DECL(uart1_dev, 1, 28, 29, UART_BAUDRATE_Baud115200)
+HOSAL_UART_DEV_DECL(app_uart0_dev, CONFIG_APP_UART0_PORT, CONFIG_APP_UART0_TX_PIN,
+                    CONFIG_APP_UART0_RX_PIN, UART_BAUDRATE_Baud115200)
+HOSAL_UART_DEV_DECL(uart1_dev, CONFIG_APP_UART1_PORT, CONFIG_APP_UART1_TX_PIN,
+                    CONFIG_APP_UART1_RX_PIN, UART_BAUDRATE_Baud115200)
 
 static uint8_t g_uart0_buf[MAX_UART_BUFFER_SIZE] = {0};
 
 static TimerHandle_t app_uart1_rx_cb_time = NULL;
+static uint8_t s_uart0_hw_ready = 0;
+static uint8_t s_uart1_hw_ready = 0;
 
 static void app_uart_task();
 
-/*uart 0 use and ota download use*/
-extern hosal_uart_dev_t uartstdio;
+#if CONFIG_APP_LOG_UART1_ENABLE
+static uint8_t s_uart1_log_ready = 0;
+
+int app_log_output(uint8_t* p_data, uint32_t data_len) {
+    if (p_data == NULL || data_len == 0) {
+        return 0;
+    }
+
+    if (!s_uart1_hw_ready) {
+        hosal_uart_init(&uart1_dev);
+        s_uart1_hw_ready = 1;
+    }
+    s_uart1_log_ready = 1;
+
+    return hosal_uart_send(&uart1_dev, p_data, data_len);
+}
+#endif
 
 int app_uart0_rx_read(uint8_t* p_data, uint32_t p_data_len) {
     if (p_data == NULL || p_data_len == 0) {
@@ -221,10 +276,17 @@ void app_uart1_recv() {
     static uint8_t tmp_buf[UART_HANDLER_RX_CACHE_SIZE] = {0};
     int len = 0;
 
-    len = __uart1_read(tmp_buf, UART_HANDLER_RX_CACHE_SIZE);
-    if (len > 0) {
+    do {
+        len = __uart1_read(tmp_buf, UART_HANDLER_RX_CACHE_SIZE);
+        if (len <= 0) {
+            break;
+        }
+#if CONFIG_APP_CLI_UART1_ENABLE
+        otPlatUartReceived(tmp_buf, (uint16_t)len);
+#else
         log_info_hexdump("uar1 rx", tmp_buf, len);
-    }
+#endif
+    } while (len > 0);
 }
 
 void app_uart1_data_recv() { return; }
@@ -303,6 +365,19 @@ int app_uart_data_send(uint8_t u_port, uint8_t* p_data, uint16_t data_len) {
     return 0;
 }
 
+int app_uart0_data_send(const uint8_t *p_data, uint16_t data_len) {
+    if (p_data == NULL || data_len == 0) {
+        return 0;
+    }
+
+    if (!s_uart0_hw_ready) {
+        hosal_uart_init(&app_uart0_dev);
+        s_uart0_hw_ready = 1;
+    }
+
+    return hosal_uart_send(&app_uart0_dev, p_data, data_len);
+}
+
 void app_uart1_rx_cb_timeout_callback(TimerHandle_t xTimer) {
     BaseType_t pxHigherPriorityTaskWoken = pdFALSE;
     uint8_t app_uart_msg = APP_UART1_RECEIVED_EVENT;
@@ -314,11 +389,17 @@ void app_uart1_rx_cb_timeout_callback(TimerHandle_t xTimer) {
 }
 
 void app_uart0_enable(void) {
+    if (!s_uart0_hw_ready) {
+        hosal_uart_init(&app_uart0_dev);
+        s_uart0_hw_ready = 1;
+    }
+
     memset(&g_uart0_rx_io, 0, sizeof(g_uart0_rx_io));
-    hosal_uart_callback_set(&uartstdio, HOSAL_UART_RX_CALLBACK,
-                            uart0_rx_callback, &uartstdio);
-    /* Raise UART0 IRQ priority during OTA to prevent FIFO overflow at 2Mbaud.
-     * Priority 3 beats radio (4) while staying within FreeRTOS ISR-safe range. */
+    hosal_uart_callback_set(&app_uart0_dev, HOSAL_UART_RX_CALLBACK,
+                            uart0_rx_callback, &app_uart0_dev);
+    hosal_uart_ioctl(&app_uart0_dev, HOSAL_UART_MODE_SET,
+                     (void*)HOSAL_UART_MODE_INT_RX);
+    /* Keep UART0 RX responsive for PC JSON bridge / OTA binary mode. */
     __NVIC_SetPriority(Uart0_IRQn, 3);
 }
 
@@ -327,9 +408,32 @@ void app_uart0_disable(void) {
     __NVIC_SetPriority(Uart0_IRQn, 4); /* restore default */
 }
 
+void app_uart_log_init(void) {
+#if CONFIG_APP_LOG_UART1_ENABLE
+    if (!s_uart1_hw_ready) {
+        hosal_uart_init(&uart1_dev);
+        s_uart1_hw_ready = 1;
+    }
+    s_uart1_log_ready = 1;
+#endif
+}
+
 void app_uart_init() {
-    /*Init UART In the first place*/
-    hosal_uart_init(&uart1_dev);
+    if (app_uart_msg_queue == NULL) {
+        app_uart_msg_queue = xQueueCreate(5, sizeof(uint8_t));
+    }
+
+    if (app_uart1_rx_cb_time == NULL) {
+        app_uart1_rx_cb_time = xTimerCreate(
+            "app_uart1_rx_cb_time", 5, pdFALSE, NULL,
+            (TimerCallbackFunction_t)app_uart1_rx_cb_timeout_callback);
+    }
+
+    if (!s_uart1_hw_ready) {
+        hosal_uart_init(&uart1_dev);
+        s_uart1_hw_ready = 1;
+    }
+
     /* Configure UART Rx interrupt callback function */
     hosal_uart_callback_set(&uart1_dev, HOSAL_UART_RX_CALLBACK,
                             __uart1_rx_callback, &uart1_dev);
@@ -339,11 +443,27 @@ void app_uart_init() {
                      (void*)HOSAL_UART_MODE_INT_RX);
 
     __NVIC_SetPriority(Uart1_IRQn, 2);
-
-    if (app_uart1_rx_cb_time == NULL) {
-        app_uart1_rx_cb_time = xTimerCreate(
-            "app_uart1_rx_cb_time", 5, pdFALSE, NULL,
-            (TimerCallbackFunction_t)app_uart1_rx_cb_timeout_callback);
-    }
-    app_uart_msg_queue = xQueueCreate(5, sizeof(uint8_t));
+#if CONFIG_APP_LOG_UART1_ENABLE
+    s_uart1_log_ready = 1;
+#endif
 }
+
+#if CONFIG_APP_CLI_UART1_ENABLE
+otError __wrap_otPlatUartEnable(void) { return OT_ERROR_NONE; }
+
+otError __wrap_otPlatUartDisable(void) { return OT_ERROR_NONE; }
+
+otError __wrap_otPlatUartSend(const uint8_t* aBuf, uint16_t aBufLength) {
+    if (aBuf == NULL || aBufLength == 0) {
+        otPlatUartSendDone();
+        return OT_ERROR_NONE;
+    }
+
+    hosal_uart_send(&uart1_dev, (uint8_t*)aBuf, aBufLength);
+    otPlatUartSendDone();
+
+    return OT_ERROR_NONE;
+}
+
+otError __wrap_otPlatUartFlush(void) { return OT_ERROR_NONE; }
+#endif

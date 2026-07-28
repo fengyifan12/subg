@@ -91,7 +91,7 @@
 
 | dev_type | 产品 | 支持的操作 |
 |----------|------|-----------|
-| `SOCKET` | 插座 | REPORT（状态变化）、CONTROL（on/off） |
+| `SOCKET` | 插座 | REPORT（状态变化）、CONTROL（翻转继电器） |
 | `LIGHT` | 光照传感器 | REPORT（lux 值） |
 | `RADAR` | 雷达 | REPORT（presence）、CONTROL（串口配置参数） |
 | `RGBCW` | RGBCW 灯带 | REPORT（各通道值）、CONTROL（各通道 PWM） |
@@ -139,8 +139,10 @@
 
 **SOCKET**
 ```json
-"data": { "state": 1 }
+"data": { "toggle": 1 }
 ```
+`toggle`: 固定为 `1`，触发一次继电器翻转（GPIO0 拉低 100 ms 后恢复高电平，模拟按键单击）。  
+不直接指定 on/off，因继电器本身为自锁型，每次按键翻转一次状态。
 
 **RGBCW**
 ```json
@@ -220,9 +222,15 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 {"ver":1,"type":"REPORT","dev_type":"RADAR","dev_name":"radar_01","ip":"fd11:ab::3","rloc16":1025,"seq":3,"data":{"presence":1}}
 ```
 
-### PC 下发插座开（PC → leader UART → child UDP）
+### 插座上报继电器状态（child → leader → PC）
 ```json
-{"ver":1,"type":"CONTROL","dev_type":"SOCKET","dev_name":"socket_01","seq":10,"data":{"state":1}}
+{"ver":1,"type":"REPORT","dev_type":"SOCKET","dev_name":"socket_01","ip":"fd11:ab::4","rloc16":2049,"seq":5,"data":{"state":1}}
+```
+`state`: `0`=断开（OFF），`1`=吸合（ON）；由 GPIO1 电平变化触发。
+
+### PC 下发插座翻转（PC → leader UART → child UDP）
+```json
+{"ver":1,"type":"CONTROL","dev_type":"SOCKET","dev_name":"socket_01","seq":10,"data":{"toggle":1}}
 ```
 
 ### 灯带调色（PC → leader → child）

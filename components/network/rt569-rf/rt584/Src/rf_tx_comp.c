@@ -269,7 +269,7 @@ void Tx_Power_Compensation_Update(sadc_value_t temperature, sadc_value_t vbat)
         }
     }
 #if (TX_PWR_COMP_DEBUG == 1)
-    printf("Region Ref : %d", tx_pwr_comp_region_pre);
+    // printf("Region Ref : %d", tx_pwr_comp_region_pre);
 #endif
     tx_pwr_comp_region = tx_pwr_comp_temperature_index;
 
@@ -400,7 +400,7 @@ void Tx_Power_Compensation_Sadc_Int_Handler(sadc_cb_t *p_cb)
 
             tx_pwr_comp_value_temperature = sadc_comp_value;
 #if (TX_PWR_COMP_DEBUG == 1)
-            printf("Temp:%d\r\n", tx_pwr_comp_value_temperature);
+            // printf("Temp:%d\r\n", tx_pwr_comp_value_temperature);
 #endif
         }
         else if (sadc_comp_input == SADC_CH_VBAT)
@@ -412,7 +412,7 @@ void Tx_Power_Compensation_Sadc_Int_Handler(sadc_cb_t *p_cb)
 
             tx_pwr_comp_value_vbat = sadc_comp_value;
 #if (TX_PWR_COMP_DEBUG == 1)
-            printf("Vbat:%d\r\n", tx_pwr_comp_value_vbat);
+            // printf("Vbat:%d\r\n", tx_pwr_comp_value_vbat);
 #endif
         }
 

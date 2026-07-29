@@ -1,7 +1,7 @@
-# MIU 私有 JSON 协议规范
+﻿# MIU 私有 JSON 协议规范
 
 > 版本：v1.0  
-> 适用固件：miu-ftd（Leader）、miu-socket、miu-light、miu-radar、miu-rgbcw
+> 适用固件：miu-ftd（Leader）、miu-socket、miu-light、miu-radar、miu-rgb
 
 ---
 
@@ -13,7 +13,7 @@
 │  socket_01   │                   │  app_device_table（路由表）      │
 │  light_01    │                   │  app_uart_pc（UART0 桥接）       │
 │  radar_01    │                   │  app_udp_comm_json_process()    │
-│  rgbcw_01    │                   └──────────────┬──────────────────┘
+│  rgb_01      │                   └──────────────┬──────────────────┘
 └──────────────┘                                  │ UART0（115200）
                                                   │ JSON + '\n'
                                          ┌────────▼────────┐
@@ -96,7 +96,7 @@
 | `SOCKET` | 插座 | REPORT（状态变化）、CONTROL（翻转 / 强制开 / 强制关继电器） |
 | `LIGHT` | 光照传感器 | REPORT（lux 值） |
 | `RADAR` | 雷达 | REPORT（presence）、CONTROL（串口配置参数） |
-| `RGBCW` | RGBCW 灯带 | REPORT（各通道值）、CONTROL（各通道 PWM） |
+| `RGB` | RGB 灯带 | REPORT（各通道值）、CONTROL（各通道 PWM） |
 
 ---
 
@@ -131,9 +131,9 @@
 ```
 `presence`: `0`=无人，`1`=有人
 
-**RGBCW**
+**RGB**
 ```json
-"data": { "r": 100, "g": 50, "b": 0, "c": 80, "w": 20 }
+"data": { "r": 100, "g": 50, "b": 0 }
 ```
 各通道 PWM 占空比，范围 `0`～`100`（百分比）
 
@@ -157,9 +157,9 @@
 
 三条命令互斥，同一包只携带其中一个字段。执行完毕后子设备均回 ACK 并上报最新状态（REPORT）。
 
-**RGBCW**
+**RGB**
 ```json
-"data": { "r": 0, "g": 0, "b": 0, "c": 100, "w": 0 }
+"data": { "r": 0, "g": 0, "b": 50 }
 ```
 
 **RADAR**（通过串口写入雷达模组的配置参数）
@@ -258,7 +258,7 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 
 ### 灯带调色（PC → leader → child）
 ```json
-{"ver":1,"type":"CONTROL","dev_type":"RGBCW","dev_name":"rgbcw_01","seq":13,"data":{"r":0,"g":0,"b":0,"c":50,"w":100}}
+{"ver":1,"type":"CONTROL","dev_type":"RGBCW","dev_name":"rgbcw_01","seq":13,"data":{"r":0,"g":0,"b":50}}
 ```
 
 ### 雷达配置参数下发（PC → leader → child）

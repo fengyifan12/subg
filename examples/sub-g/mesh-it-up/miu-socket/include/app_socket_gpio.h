@@ -11,11 +11,15 @@
  *   HIGH (1) = 吸合（ON），LOW (0) = 断开（OFF），上电默认 OFF
  *
  * app_socket_relay_toggle(): 翻转继电器状态并上报（PC CONTROL 或按键均调用此函数）
+ * app_socket_relay_on():     强制拉高 GPIO1（继电器吸合 ON）并上报
+ * app_socket_relay_off():    强制拉低 GPIO1（继电器断开 OFF）并上报
  * app_socket_relay_state_get(): 返回当前继电器状态（0/1）
  */
 
 void    app_socket_gpio_init(void);
 void    app_socket_relay_toggle(void);
+void    app_socket_relay_on(void);
+void    app_socket_relay_off(void);
 uint8_t app_socket_relay_state_get(void);
 
 #endif /* APP_SOCKET_GPIO_H */

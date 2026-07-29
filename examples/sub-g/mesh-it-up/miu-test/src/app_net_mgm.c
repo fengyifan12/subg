@@ -82,7 +82,14 @@ static void app_test_send_register(void)
 {
     otInstance   *inst = otrGetInstance();
     char          ip_str[OT_IP6_ADDRESS_STRING_SIZE];
+    char          dev_id[7];   /* MAC 末 6 位大写十六进制 + '\0' */
     char          json_buf[256];
+
+    /* 取出厂 EUI-64，末 3 字节格式化为 6 位大写十六进制作为 dev_id */
+    otExtAddress  eui64;
+    otLinkGetFactoryAssignedIeeeEui64(inst, &eui64);
+    snprintf(dev_id, sizeof(dev_id), "%02X%02X%02X",
+             eui64.m8[5], eui64.m8[6], eui64.m8[7]);
 
     const otIp6Address *ml_eid = otThreadGetMeshLocalEid(inst);
     uint16_t rloc16 = otThreadGetRloc16(inst);
@@ -93,12 +100,13 @@ static void app_test_send_register(void)
              "{\"ver\":1,\"type\":\"REGISTER\","
              "\"dev_type\":\"" TEST_DEV_TYPE "\","
              "\"dev_name\":\"" TEST_DEV_NAME "\","
+             "\"dev_id\":\"%s\","
              "\"ip\":\"%s\","
              "\"rloc16\":%u,"
              "\"seq\":%u,"
              "\"data\":{\"fw_ver\":\"" TEST_FW_VER "\","
                        "\"hw_ver\":\"" TEST_HW_VER "\"}}",
-             ip_str, (unsigned)rloc16, (unsigned)s_json_seq);
+             dev_id, ip_str, (unsigned)rloc16, (unsigned)s_json_seq);
 
     /* 目标：Leader RLOC fc00 */
     otIp6Address dst = *otThreadGetRloc(inst);

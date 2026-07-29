@@ -66,6 +66,24 @@ void app_socket_relay_toggle(void)
     app_socket_net_report_state(s_relay_state);
 }
 
+/* 强制拉高 GPIO1（继电器吸合），无论当前状态如何。*/
+void app_socket_relay_on(void)
+{
+    s_relay_state = 1;
+    hosal_gpio_pin_set(CONFIG_SOCKET_RELAY_CTRL_PIN);
+    log_info("[socket_gpio] relay -> ON (GPIO%d=1)", CONFIG_SOCKET_RELAY_CTRL_PIN);
+    app_socket_net_report_state(s_relay_state);
+}
+
+/* 强制拉低 GPIO1（继电器断开），无论当前状态如何。*/
+void app_socket_relay_off(void)
+{
+    s_relay_state = 0;
+    hosal_gpio_pin_clear(CONFIG_SOCKET_RELAY_CTRL_PIN);
+    log_info("[socket_gpio] relay -> OFF (GPIO%d=0)", CONFIG_SOCKET_RELAY_CTRL_PIN);
+    app_socket_net_report_state(s_relay_state);
+}
+
 /* -----------------------------------------------------------------------
  * GPIO0 — 物理按键输入
  * ----------------------------------------------------------------------- */

@@ -41,6 +41,7 @@ miu_device_info_t *app_device_table_find(const char *dev_name)
  * 新增 / 更新
  * ----------------------------------------------------------------------- */
 miu_device_info_t *app_device_table_add(const char        *dev_name,
+                                         const char        *dev_id,
                                          miu_dev_type_t     type,
                                          const otIp6Address *ip,
                                          uint16_t            rloc16,
@@ -73,6 +74,10 @@ miu_device_info_t *app_device_table_add(const char        *dev_name,
     entry->last_seen_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
     strncpy(entry->dev_name, dev_name, MIU_DEV_NAME_MAX - 1);
     entry->dev_name[MIU_DEV_NAME_MAX - 1] = '\0';
+    if (dev_id) {
+        strncpy(entry->dev_id, dev_id, MIU_DEV_ID_MAX - 1);
+        entry->dev_id[MIU_DEV_ID_MAX - 1] = '\0';
+    }
     if (fw_ver) {
         strncpy(entry->fw_ver, fw_ver, MIU_FW_VER_MAX - 1);
         entry->fw_ver[MIU_FW_VER_MAX - 1] = '\0';
@@ -163,12 +168,14 @@ void app_device_table_iter_register_json(void (*cb)(const char *json_str))
                  "{\"ver\":1,\"type\":\"REGISTER\","
                  "\"dev_type\":\"%s\","
                  "\"dev_name\":\"%s\","
+                 "\"dev_id\":\"%s\","
                  "\"ip\":\"%s\","
                  "\"rloc16\":%u,"
                  "\"seq\":0,"
                  "\"data\":{\"fw_ver\":\"%s\",\"hw_ver\":\"%s\"}}",
                  app_device_type_to_str(d->dev_type),
                  d->dev_name,
+                 d->dev_id,
                  ip_str,
                  (unsigned)d->rloc16,
                  d->fw_ver,

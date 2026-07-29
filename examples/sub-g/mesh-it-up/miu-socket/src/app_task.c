@@ -103,7 +103,10 @@ typedef struct {
  * app_udp_comm_json_process 覆盖（弱符号替换）
  * 接收来自 Leader 的 ACK 或 CONTROL
  *   ACK     → 打印确认日志
- *   CONTROL → 解析 data.toggle，触发继电器翻转
+ *   CONTROL → 解析 data 字段，支持三种操作：
+ *               toggle:1  翻转继电器状态
+ *               on:1      强制拉高 GPIO1（继电器吸合）
+ *               off:1     强制拉低 GPIO1（继电器断开）
  * ----------------------------------------------------------------------- */
 void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
                                 otIp6Address src_addr)
@@ -130,9 +133,17 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
         }
     } else if (strcmp(msg_type, "CONTROL") == 0) {
         int toggle = 0;
+        int on_val = 0;
+        int off_val = 0;
         if (miu_json_get_int(json, "toggle", &toggle) == 0 && toggle) {
             log_info("[socket] << CONTROL toggle -> relay");
             app_socket_relay_toggle();
+        } else if (miu_json_get_int(json, "on", &on_val) == 0 && on_val) {
+            log_info("[socket] << CONTROL on -> relay ON");
+            app_socket_relay_on();
+        } else if (miu_json_get_int(json, "off", &off_val) == 0 && off_val) {
+            log_info("[socket] << CONTROL off -> relay OFF");
+            app_socket_relay_off();
         } else {
             log_info("[socket] << CONTROL for %s: unknown data: %s", dev_name, json);
         }

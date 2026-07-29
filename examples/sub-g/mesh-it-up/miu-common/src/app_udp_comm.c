@@ -177,12 +177,14 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
 
     /* ---- REGISTER ---- */
     if (strcmp(msg_type, "REGISTER") == 0) {
+        char dev_id[MIU_DEV_ID_MAX] = {0};
         char fw_ver[MIU_FW_VER_MAX] = {0};
         char hw_ver[MIU_HW_VER_MAX] = {0};
+        miu_json_get_str(json, "dev_id", dev_id, sizeof(dev_id));
         miu_json_get_str(json, "fw_ver", fw_ver, sizeof(fw_ver));
         miu_json_get_str(json, "hw_ver", hw_ver, sizeof(hw_ver));
 
-        app_device_table_add(dev_name, dev_type, &src_addr,
+        app_device_table_add(dev_name, dev_id, dev_type, &src_addr,
                              (uint16_t)rloc16_val, fw_ver, hw_ver);
 
         /* 转发到 PC */
@@ -208,7 +210,7 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
         miu_device_info_t *entry = app_device_table_find(dev_name);
         if (!entry) {
             /* 收到 REPORT 但尚未 REGISTER：尝试自动补录（IP/rloc 已知）*/
-            entry = app_device_table_add(dev_name, dev_type, &src_addr,
+            entry = app_device_table_add(dev_name, "", dev_type, &src_addr,
                                          (uint16_t)rloc16_val, "", "");
         }
         if (entry) {

@@ -53,6 +53,7 @@
   "type"    : "<消息类型>",
   "dev_type": "<设备类型>",
   "dev_name": "<预烧录设备名>",
+  "dev_id"  : "AABBCC",
   "ip"      : "<ML-EID IPv6 字符串>",
   "rloc16"  : 1025,
   "seq"     : 42,
@@ -66,6 +67,7 @@
 | `type` | string | 是 | 见第 4 节 |
 | `dev_type` | string | 是 | 见第 5 节 |
 | `dev_name` | string | 是 | 出厂预烧录，全网唯一标识 |
+| `dev_id` | string | 是 | 设备 MAC 地址末 6 位（大写十六进制），用于唯一识别硬件 |
 | `ip` | string | child→leader 必填 | 发送方 ML-EID |
 | `rloc16` | int | child→leader 必填 | 发送方 RLOC16（十进制） |
 | `seq` | int | 是 | 单调递增序列号，ACK 用于匹配 |
@@ -91,7 +93,7 @@
 
 | dev_type | 产品 | 支持的操作 |
 |----------|------|-----------|
-| `SOCKET` | 插座 | REPORT（状态变化）、CONTROL（翻转继电器） |
+| `SOCKET` | 插座 | REPORT（状态变化）、CONTROL（翻转 / 强制开 / 强制关继电器） |
 | `LIGHT` | 光照传感器 | REPORT（lux 值） |
 | `RADAR` | 雷达 | REPORT（presence）、CONTROL（串口配置参数） |
 | `RGBCW` | RGBCW 灯带 | REPORT（各通道值）、CONTROL（各通道 PWM） |
@@ -141,8 +143,19 @@
 ```json
 "data": { "toggle": 1 }
 ```
-`toggle`: 固定为 `1`，触发一次继电器翻转（GPIO0 拉低 100 ms 后恢复高电平，模拟按键单击）。  
-不直接指定 on/off，因继电器本身为自锁型，每次按键翻转一次状态。
+`toggle`: 固定为 `1`，触发一次继电器翻转（GPIO1 取反），无论当前状态如何。
+
+```json
+"data": { "on": 1 }
+```
+`on`: 固定为 `1`，强制拉高 GPIO1（继电器吸合，ON）。
+
+```json
+"data": { "off": 1 }
+```
+`off`: 固定为 `1`，强制拉低 GPIO1（继电器断开，OFF）。
+
+三条命令互斥，同一包只携带其中一个字段。执行完毕后子设备均回 ACK 并上报最新状态（REPORT）。
 
 **RGBCW**
 ```json
@@ -209,7 +222,7 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 
 ### 雷达入网注册（child → leader）
 ```json
-{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","ip":"fd11:ab::3","rloc16":1025,"seq":1,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
+{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","ip":"fd11:ab::3","rloc16":1025,"seq":1,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
 ```
 
 ### Leader 回 ACK（leader → child）
@@ -233,19 +246,29 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 {"ver":1,"type":"CONTROL","dev_type":"SOCKET","dev_name":"socket_01","seq":10,"data":{"toggle":1}}
 ```
 
+### PC 下发插座强制开（PC → leader UART → child UDP）
+```json
+{"ver":1,"type":"CONTROL","dev_type":"SOCKET","dev_name":"socket_01","seq":11,"data":{"on":1}}
+```
+
+### PC 下发插座强制关（PC → leader UART → child UDP）
+```json
+{"ver":1,"type":"CONTROL","dev_type":"SOCKET","dev_name":"socket_01","seq":12,"data":{"off":1}}
+```
+
 ### 灯带调色（PC → leader → child）
 ```json
-{"ver":1,"type":"CONTROL","dev_type":"RGBCW","dev_name":"rgbcw_01","seq":11,"data":{"r":0,"g":0,"b":0,"c":50,"w":100}}
+{"ver":1,"type":"CONTROL","dev_type":"RGBCW","dev_name":"rgbcw_01","seq":13,"data":{"r":0,"g":0,"b":0,"c":50,"w":100}}
 ```
 
 ### 雷达配置参数下发（PC → leader → child）
 ```json
-{"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":12,"data":{"delay_s":30,"dist_m":5}}
+{"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":14,"data":{"delay_s":30,"dist_m":5}}
 ```
 
 ### 雷达查询离开延迟（PC → leader → child）
 ```json
-{"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":13,"data":{"get":"delay_s"}}
+{"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":15,"data":{"get":"delay_s"}}
 ```
 
 ### PC 请求设备表（PC → leader UART）
@@ -255,8 +278,8 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 
 ### Leader 逐条重播 REGISTER（leader → PC UART，每条设备发一行）
 ```json
-{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","ip":"fd11:ab::3","rloc16":1025,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
-{"ver":1,"type":"REGISTER","dev_type":"SOCKET","dev_name":"socket_01","ip":"fd11:ab::4","rloc16":2049,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
+{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","ip":"fd11:ab::3","rloc16":1025,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
+{"ver":1,"type":"REGISTER","dev_type":"SOCKET","dev_name":"socket_01","dev_id":"DDEEFF","ip":"fd11:ab::4","rloc16":2049,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
 ```
 
 ### 子设备立即回 ACK（child → leader → PC）
@@ -312,6 +335,7 @@ typedef struct {
     bool             valid;
     miu_dev_type_t   dev_type;
     char             dev_name[32];   /* 预烧录，全网唯一 */
+    char             dev_id[7];      /* MAC 末 6 位，大写十六进制，如 "AABBCC" */
     otIp6Address     ip;             /* ML-EID，UDP 路由目标 */
     uint16_t         rloc16;
     char             fw_ver[16];

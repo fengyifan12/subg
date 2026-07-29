@@ -59,6 +59,7 @@ typedef struct {
  * 字段长度限制
  * ----------------------------------------------------------------------- */
 #define MIU_DEV_NAME_MAX   32
+#define MIU_DEV_ID_MAX      7   /* MAC 末 6 位大写十六进制 + '\0'，如 "AABBCC" */
 #define MIU_FW_VER_MAX     16
 #define MIU_HW_VER_MAX      8
 
@@ -69,6 +70,7 @@ typedef struct {
     bool             valid;
     miu_dev_type_t   dev_type;
     char             dev_name[MIU_DEV_NAME_MAX]; /* 预烧录，全网唯一标识 */
+    char             dev_id[MIU_DEV_ID_MAX];     /* MAC 末 6 位大写十六进制，如 "AABBCC" */
     otIp6Address     ip;                          /* ML-EID，UDP 路由目标 */
     uint16_t         rloc16;
     char             fw_ver[MIU_FW_VER_MAX];
@@ -112,6 +114,7 @@ miu_device_info_t *app_device_table_find(const char *dev_name);
  * @return 指向条目的指针，表满时返回 NULL。
  */
 miu_device_info_t *app_device_table_add(const char        *dev_name,
+                                         const char        *dev_id,
                                          miu_dev_type_t     type,
                                          const otIp6Address *ip,
                                          uint16_t            rloc16,

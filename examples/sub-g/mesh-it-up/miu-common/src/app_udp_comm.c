@@ -184,11 +184,19 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
         miu_json_get_str(json, "fw_ver", fw_ver, sizeof(fw_ver));
         miu_json_get_str(json, "hw_ver", hw_ver, sizeof(hw_ver));
 
+        /* 判断是首次注册还是重新入网（设备表中已有记录） */
+        bool is_rejoin = (app_device_table_find(dev_name) != NULL);
+
         app_device_table_add(dev_name, dev_id, dev_type, &src_addr,
                              (uint16_t)rloc16_val, fw_ver, hw_ver);
 
-        /* 转发到 PC */
-        app_uart_pc_send(json);
+        if (is_rejoin) {
+            /* 重新入网：设备表已有记录，通知 PC 设备上线 */
+            app_uart_pc_send_dev_online(dev_type_str, dev_name, dev_id, 1);
+        } else {
+            /* 首次注册：转发完整 REGISTER 让 PC 建立设备条目 */
+            app_uart_pc_send(json);
+        }
 
         /* 回 ACK 给子设备 */
         char ack_buf[256];
@@ -217,6 +225,7 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
             taskENTER_CRITICAL();
             entry->last_seen_ms =
                 (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+            entry->online = true;
             int v = 0;
             switch (dev_type) {
             case MIU_DEV_TYPE_SOCKET:

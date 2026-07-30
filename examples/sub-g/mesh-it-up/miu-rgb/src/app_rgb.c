@@ -56,17 +56,13 @@ void app_rgb_set(uint8_t r, uint8_t g, uint8_t b)
     if (g > 100) g = 100;
     if (b > 100) b = 100;
 
-    r = 100 - r;
-    g = 100 - g;
-    b = 100 - b;
-
     s_r = r;
     s_g = g;
     s_b = b;
 
-    hosal_pwm_fmt0_duty(HOSAL_PWM_ID_0, r);
-    hosal_pwm_fmt0_duty(HOSAL_PWM_ID_1, g);
-    hosal_pwm_fmt0_duty(HOSAL_PWM_ID_2, b);
+    hosal_pwm_fmt0_duty(HOSAL_PWM_ID_0, 100 - r);
+    hosal_pwm_fmt0_duty(HOSAL_PWM_ID_1, 100 - g);
+    hosal_pwm_fmt0_duty(HOSAL_PWM_ID_2, 100 - b);
 
     log_info("[rgb] set R=%u G=%u B=%u", r, g, b);
 }

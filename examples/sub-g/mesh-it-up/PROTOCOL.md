@@ -86,6 +86,7 @@
 | `CONTROL` | leader → child（经由 PC 下发） | 控制命令 | ✅ child 回 ACK |
 | `ACK` | 双向 | 对 REGISTER / CONTROL 的应答 | ❌ |
 | `QUERY_TABLE` | PC → leader（UART） | 请求 Leader 重播当前设备表 | ❌（leader 逐条发 REGISTER） |
+| `DEV_ONLINE` | leader → PC（UART） | 设备在线/离线状态变更通知 | ❌ |
 
 ---
 
@@ -216,6 +217,28 @@ PC 发往 Leader，`data` 字段为空对象（或省略）：
 
 Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一条 `REGISTER` 格式 JSON（字段含义与第 6.1 节相同，`seq` 固定为 `0` 表示重播）。若设备表为空则无任何回复。
 
+### 6.6 DEV_ONLINE
+
+由 Leader 主动发往 PC（UART0），用于通知设备在线状态变更，共两种触发场景：
+
+| 触发条件 | `online` 值 |
+|----------|-------------|
+| Leader 检测到设备超时失联（如 Thread 邻居表消失、心跳超时） | `0`（离线） |
+| 收到 REGISTER 且设备表中已存在该 `dev_id` 的注册信息（重新入网） | `1`（上线） |
+
+```json
+"data": {
+  "online": 0
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `online` | int | `1` = 设备上线，`0` = 设备离线 |
+
+> `dev_type`、`dev_name`、`dev_id` 字段照常填写，PC 可据此定位到对应设备条目并更新在线状态。  
+> 此消息无需 ACK，PC 侧按最新状态覆盖即可。
+
 ---
 
 ## 7. 完整消息示例
@@ -271,6 +294,18 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 {"ver":1,"type":"CONTROL","dev_type":"RADAR","dev_name":"radar_01","seq":15,"data":{"get":"delay_s"}}
 ```
 
+### Leader 上报设备离线（leader → PC UART）
+```json
+{"ver":1,"type":"DEV_ONLINE","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","seq":20,"data":{"online":0}}
+```
+Leader 检测到 radar_01 失联，向 PC 上报离线状态。
+
+### Leader 上报设备重新上线（leader → PC UART）
+```json
+{"ver":1,"type":"DEV_ONLINE","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","seq":21,"data":{"online":1}}
+```
+radar_01 重新入网并发送 REGISTER，Leader 发现设备表中已有该条目，向 PC 上报上线状态。
+
 ### PC 请求设备表（PC → leader UART）
 ```json
 {"ver":1,"type":"QUERY_TABLE"}
@@ -297,10 +332,19 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 ## 8. 消息流程图
 
 ```
-子设备入网
-  Child ──[REGISTER]──► Leader  更新设备路由表
+子设备入网（首次注册）
+  Child ──[REGISTER]──► Leader  新建设备路由表条目
   Leader ──[ACK]──────► Child
-  Leader ──[REGISTER + '\n']──► PC UART0  （PC 更新界面）
+  Leader ──[REGISTER + '\n']──► PC UART0  （PC 新增设备）
+
+子设备重新入网（已有记录）
+  Child ──[REGISTER]──► Leader  命中已有条目，刷新 ip/rloc16/last_seen
+  Leader ──[ACK]──────► Child
+  Leader ──[DEV_ONLINE online=1 + '\n']──► PC UART0  （PC 更新在线状态）
+
+子设备离线
+  Leader 检测到失联（邻居表消失 / 心跳超时）
+  Leader ──[DEV_ONLINE online=0 + '\n']──► PC UART0  （PC 更新离线状态）
 
 子设备状态变化
   Child ──[REPORT]──► Leader  更新状态缓存
@@ -341,6 +385,7 @@ typedef struct {
     char             fw_ver[16];
     char             hw_ver[8];
     uint32_t         last_seen_ms;   /* FreeRTOS tick ms */
+    bool             online;         /* 当前在线状态；离线检测置 false，重新入网置 true */
     union {
         struct { uint8_t  state;               } socket;
         struct { uint32_t lux;                 } light;

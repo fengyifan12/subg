@@ -76,6 +76,7 @@ typedef struct {
     char             fw_ver[MIU_FW_VER_MAX];
     char             hw_ver[MIU_HW_VER_MAX];
     uint32_t         last_seen_ms;               /* 最后通信时间戳（FreeRTOS tick ms） */
+    bool             online;                     /* 在线状态：true=在线，false=离线 */
 
     /* 最新状态缓存，按设备类型取对应成员 */
     union {
@@ -90,6 +91,9 @@ typedef struct {
  * 设备表（静态分配，Leader 全局唯一）
  * ----------------------------------------------------------------------- */
 #define MIU_MAX_DEVICES  16
+
+/** 设备无消息超过此时长（ms）则视为离线 */
+#define MIU_DEV_OFFLINE_TIMEOUT_MS  60000U
 
 typedef struct {
     miu_device_info_t devices[MIU_MAX_DEVICES];
@@ -142,5 +146,13 @@ const char *app_device_type_to_str(miu_dev_type_t type);
  * 用于 PC 请求设备表重播（QUERY_TABLE 命令）。
  */
 void app_device_table_iter_register_json(void (*cb)(const char *json_str));
+
+/**
+ * 离线检测：遍历设备表，将超过 MIU_DEV_OFFLINE_TIMEOUT_MS 未通信且当前
+ * 仍标记为 online 的设备置为 offline，并构造 DEV_ONLINE（online=0）JSON
+ * 通过 cb 上报。每次状态变化只触发一次回调。
+ * 应在 1s 心跳任务中定期调用（仅 Leader 侧）。
+ */
+void app_device_table_check_offline(void (*cb)(const char *json_str));
 
 #endif /* APP_DEVICE_TABLE_H */

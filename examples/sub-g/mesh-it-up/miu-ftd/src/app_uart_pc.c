@@ -72,9 +72,12 @@ static void on_pc_json_line(const char *line)
     vPortFree(buf);
 }
 
+static uint32_t s_leader_seq = 0;
+
 void app_uart_pc_init(void)
 {
-    s_line_len = 0;
+    s_line_len   = 0;
+    s_leader_seq = 0;
     memset(s_line_buf, 0, sizeof(s_line_buf));
     log_info("[uart_pc] PC bridge ready on UART0 (115200)");
 }
@@ -92,6 +95,29 @@ void app_uart_pc_send(const char *json_str)
     uint16_t len = (uint16_t)strlen(json_str);
     app_uart0_data_send((const uint8_t *) json_str, len);
     app_uart0_data_send((const uint8_t *) "\n", 1);
+}
+
+void app_uart_pc_send_dev_online(const char *dev_type_str,
+                                  const char *dev_name,
+                                  const char *dev_id,
+                                  int         online)
+{
+    if (!dev_type_str || !dev_name || !dev_id) return;
+
+    char buf[192];
+    snprintf(buf, sizeof(buf),
+             "{\"ver\":1,\"type\":\"DEV_ONLINE\","
+             "\"dev_type\":\"%s\","
+             "\"dev_name\":\"%s\","
+             "\"dev_id\":\"%s\","
+             "\"seq\":%u,"
+             "\"data\":{\"online\":%d}}",
+             dev_type_str, dev_name, dev_id,
+             (unsigned)++s_leader_seq,
+             online ? 1 : 0);
+
+    log_info("[uart_pc] DEV_ONLINE %s -> %s (online=%d)", dev_name, dev_type_str, online);
+    app_uart_pc_send(buf);
 }
 
 void app_uart_pc_json_recv(void)

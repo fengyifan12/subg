@@ -68,6 +68,7 @@ miu_device_info_t *app_device_table_add(const char        *dev_name,
 
     taskENTER_CRITICAL();
     entry->valid        = true;
+    entry->online       = true;
     entry->dev_type     = type;
     entry->rloc16       = rloc16;
     entry->ip           = *ip;
@@ -146,6 +147,45 @@ const char *app_device_type_to_str(miu_dev_type_t type)
     case MIU_DEV_TYPE_RADAR:   return "RADAR";
     case MIU_DEV_TYPE_RGBCW:   return "RGBCW";
     default:                    return "UNKNOWN";
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * 离线检测：超时设备标记 offline 并构造 DEV_ONLINE(online=0) 回调
+ * ----------------------------------------------------------------------- */
+void app_device_table_check_offline(void (*cb)(const char *json_str))
+{
+    if (!cb) return;
+
+    uint32_t now = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+    static uint32_t s_offline_seq = 0;
+    char json_buf[192];
+
+    for (int i = 0; i < MIU_MAX_DEVICES; i++) {
+        miu_device_info_t *d = &s_dev_table.devices[i];
+        if (!d->valid || !d->online) continue;
+
+        uint32_t elapsed = now - d->last_seen_ms;
+        if (elapsed > MIU_DEV_OFFLINE_TIMEOUT_MS) {
+            taskENTER_CRITICAL();
+            d->online = false;
+            taskEXIT_CRITICAL();
+
+            log_info("[devtab] %s offline (no msg for %u ms)", d->dev_name, elapsed);
+
+            snprintf(json_buf, sizeof(json_buf),
+                     "{\"ver\":1,\"type\":\"DEV_ONLINE\","
+                     "\"dev_type\":\"%s\","
+                     "\"dev_name\":\"%s\","
+                     "\"dev_id\":\"%s\","
+                     "\"seq\":%u,"
+                     "\"data\":{\"online\":0}}",
+                     app_device_type_to_str(d->dev_type),
+                     d->dev_name,
+                     d->dev_id,
+                     (unsigned)++s_offline_seq);
+            cb(json_buf);
+        }
     }
 }
 

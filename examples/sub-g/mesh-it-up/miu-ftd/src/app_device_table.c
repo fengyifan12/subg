@@ -3,6 +3,7 @@
  */
 
 #include "app_device_table.h"
+#include "app_uart_pc.h"
 #include <string.h>
 #include <stdio.h>
 #include "FreeRTOS.h"
@@ -151,42 +152,59 @@ const char *app_device_type_to_str(miu_dev_type_t type)
 }
 
 /* -----------------------------------------------------------------------
- * 离线检测：超时设备标记 offline 并构造 DEV_ONLINE(online=0) 回调
+ * 按 RLOC16 / ExtAddress(末 3 字节=dev_id) 查找
  * ----------------------------------------------------------------------- */
-void app_device_table_check_offline(void (*cb)(const char *json_str))
+static miu_device_info_t *find_by_rloc16(uint16_t rloc16)
 {
-    if (!cb) return;
-
-    uint32_t now = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-    static uint32_t s_offline_seq = 0;
-    char json_buf[192];
-
     for (int i = 0; i < MIU_MAX_DEVICES; i++) {
-        miu_device_info_t *d = &s_dev_table.devices[i];
-        if (!d->valid || !d->online) continue;
-
-        uint32_t elapsed = now - d->last_seen_ms;
-        if (elapsed > MIU_DEV_OFFLINE_TIMEOUT_MS) {
-            taskENTER_CRITICAL();
-            d->online = false;
-            taskEXIT_CRITICAL();
-
-            log_info("[devtab] %s offline (no msg for %u ms)", d->dev_name, elapsed);
-
-            snprintf(json_buf, sizeof(json_buf),
-                     "{\"ver\":1,\"type\":\"DEV_ONLINE\","
-                     "\"dev_type\":\"%s\","
-                     "\"dev_name\":\"%s\","
-                     "\"dev_id\":\"%s\","
-                     "\"seq\":%u,"
-                     "\"data\":{\"online\":0}}",
-                     app_device_type_to_str(d->dev_type),
-                     d->dev_name,
-                     d->dev_id,
-                     (unsigned)++s_offline_seq);
-            cb(json_buf);
+        if (s_dev_table.devices[i].valid &&
+            s_dev_table.devices[i].rloc16 == rloc16) {
+            return &s_dev_table.devices[i];
         }
     }
+    return NULL;
+}
+
+static miu_device_info_t *find_by_ext_tail(const uint8_t *ext_addr)
+{
+    if (!ext_addr) return NULL;
+
+    char id[MIU_DEV_ID_MAX];
+    /* 与子设备 REGISTER 一致：EUI-64 末 3 字节 → 6 位大写十六进制 */
+    snprintf(id, sizeof(id), "%02X%02X%02X",
+             ext_addr[5], ext_addr[6], ext_addr[7]);
+
+    for (int i = 0; i < MIU_MAX_DEVICES; i++) {
+        if (s_dev_table.devices[i].valid &&
+            strncmp(s_dev_table.devices[i].dev_id, id, MIU_DEV_ID_MAX - 1) == 0) {
+            return &s_dev_table.devices[i];
+        }
+    }
+    return NULL;
+}
+
+/* -----------------------------------------------------------------------
+ * OpenThread child 离开 → 上报 DEV_ONLINE(online=0)
+ * ----------------------------------------------------------------------- */
+void app_device_table_on_child_removed(uint16_t rloc16, const uint8_t *ext_addr)
+{
+    miu_device_info_t *d = find_by_rloc16(rloc16);
+    if (!d) {
+        d = find_by_ext_tail(ext_addr);
+    }
+    if (!d || !d->online) {
+        return;
+    }
+
+    taskENTER_CRITICAL();
+    d->online = false;
+    taskEXIT_CRITICAL();
+
+    log_info("[devtab] %s offline (OT child removed, rloc=%04X)",
+             d->dev_name, rloc16);
+
+    app_uart_pc_send_dev_online(app_device_type_to_str(d->dev_type),
+                                 d->dev_name, d->dev_id, 0);
 }
 
 /* -----------------------------------------------------------------------

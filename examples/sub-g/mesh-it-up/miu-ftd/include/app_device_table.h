@@ -92,9 +92,6 @@ typedef struct {
  * ----------------------------------------------------------------------- */
 #define MIU_MAX_DEVICES  16
 
-/** 设备无消息超过此时长（ms）则视为离线 */
-#define MIU_DEV_OFFLINE_TIMEOUT_MS  60000U
-
 typedef struct {
     miu_device_info_t devices[MIU_MAX_DEVICES];
     uint8_t           count;
@@ -148,11 +145,11 @@ const char *app_device_type_to_str(miu_dev_type_t type);
 void app_device_table_iter_register_json(void (*cb)(const char *json_str));
 
 /**
- * 离线检测：遍历设备表，将超过 MIU_DEV_OFFLINE_TIMEOUT_MS 未通信且当前
- * 仍标记为 online 的设备置为 offline，并构造 DEV_ONLINE（online=0）JSON
- * 通过 cb 上报。每次状态变化只触发一次回调。
- * 应在 1s 心跳任务中定期调用（仅 Leader 侧）。
+ * OpenThread 检测到 child 离开时调用：按 RLOC16（或 ExtAddress 末 3 字节 = dev_id）
+ * 查找设备表，若当前 online 则置 offline 并向 PC 上报 DEV_ONLINE(online=0)。
+ * @param rloc16   离开 child 的 RLOC16
+ * @param ext_addr EUI-64（8 字节），可为 NULL；用于 rloc16 未命中时按 dev_id 回退匹配
  */
-void app_device_table_check_offline(void (*cb)(const char *json_str));
+void app_device_table_on_child_removed(uint16_t rloc16, const uint8_t *ext_addr);
 
 #endif /* APP_DEVICE_TABLE_H */

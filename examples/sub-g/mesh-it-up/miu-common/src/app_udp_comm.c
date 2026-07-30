@@ -225,7 +225,6 @@ void app_udp_comm_json_process(uint8_t *data, uint16_t lens,
             taskENTER_CRITICAL();
             entry->last_seen_ms =
                 (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-            entry->online = true;
             int v = 0;
             switch (dev_type) {
             case MIU_DEV_TYPE_SOCKET:

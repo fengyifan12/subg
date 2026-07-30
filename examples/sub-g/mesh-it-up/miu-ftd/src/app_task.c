@@ -20,6 +20,7 @@
 #include "app_task.h"
 #include "app_uart.h"
 #include "app_uart_pc.h"
+#include "app_device_table.h"
 #include "app_udp.h"
 #include "cli.h"
 #include "hosal_gpio.h"
@@ -231,7 +232,7 @@ ot_neighborChangeCallback(otNeighborTableEvent aEvent,
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[7]);
             break;
         case OT_NEIGHBOR_TABLE_EVENT_CHILD_REMOVED:
-            log_info("Child removed      : %02x%02x%02x%02x%02x%02x%02x%02x",
+            log_info("Child removed      : %02x%02x%02x%02x%02x%02x%02x%02x rloc=%04x",
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[0],
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[1],
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[2],
@@ -239,7 +240,11 @@ ot_neighborChangeCallback(otNeighborTableEvent aEvent,
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[4],
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[5],
                      aEntryInfo->mInfo.mChild.mExtAddress.m8[6],
-                     aEntryInfo->mInfo.mChild.mExtAddress.m8[7]);
+                     aEntryInfo->mInfo.mChild.mExtAddress.m8[7],
+                     aEntryInfo->mInfo.mChild.mRloc16);
+            /* OpenThread 心跳超时 / 主动 detach → 通知 PC 设备离线 */
+            app_device_table_on_child_removed(aEntryInfo->mInfo.mChild.mRloc16,
+                                               aEntryInfo->mInfo.mChild.mExtAddress.m8);
             break;
         case OT_NEIGHBOR_TABLE_EVENT_CHILD_MODE_CHANGED:
             log_info("Child changned     : %02x%02x%02x%02x%02x%02x%02x%02x",

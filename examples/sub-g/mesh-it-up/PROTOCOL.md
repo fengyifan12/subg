@@ -223,8 +223,8 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 
 | 触发条件 | `online` 值 |
 |----------|-------------|
-| Leader 检测到设备超时失联（如 Thread 邻居表消失、心跳超时） | `0`（离线） |
-| 收到 REGISTER 且设备表中已存在该 `dev_id` 的注册信息（重新入网） | `1`（上线） |
+| OpenThread 邻居表 `CHILD_REMOVED`（Leader 检测到 child 离开，如 MLE 超时 / 主动 detach） | `0`（离线） |
+| 收到 REGISTER 且设备表中已存在该设备的注册信息（重新入网） | `1`（上线） |
 
 ```json
 "data": {
@@ -298,7 +298,7 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 ```json
 {"ver":1,"type":"DEV_ONLINE","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","seq":20,"data":{"online":0}}
 ```
-Leader 检测到 radar_01 失联，向 PC 上报离线状态。
+Leader 检测到 radar_01 从 Thread 邻居表移除（CHILD_REMOVED），向 PC 上报离线状态。
 
 ### Leader 上报设备重新上线（leader → PC UART）
 ```json
@@ -343,7 +343,7 @@ radar_01 重新入网并发送 REGISTER，Leader 发现设备表中已有该条�
   Leader ──[DEV_ONLINE online=1 + '\n']──► PC UART0  （PC 更新在线状态）
 
 子设备离线
-  Leader 检测到失联（邻居表消失 / 心跳超时）
+  OpenThread 检测到 child 离开（MLE 超时 / detach）
   Leader ──[DEV_ONLINE online=0 + '\n']──► PC UART0  （PC 更新离线状态）
 
 子设备状态变化
@@ -385,7 +385,7 @@ typedef struct {
     char             fw_ver[16];
     char             hw_ver[8];
     uint32_t         last_seen_ms;   /* FreeRTOS tick ms */
-    bool             online;         /* 当前在线状态；离线检测置 false，重新入网置 true */
+    bool             online;         /* OT CHILD_REMOVED → false；重新 REGISTER → true */
     union {
         struct { uint8_t  state;               } socket;
         struct { uint32_t lux;                 } light;

@@ -785,9 +785,6 @@ static void net_mgm_heartbeat_task(void *arg)
             node_ask_router();
         }
         node_survival_tick();
-
-        /* 检测 JSON 设备离线（last_seen_ms 超时）并上报 DEV_ONLINE 给 PC */
-        app_device_table_check_offline(app_uart_pc_send);
     } else {
         /* 非 Leader：Challenge 定时 */
         if (!s_network_complete) {

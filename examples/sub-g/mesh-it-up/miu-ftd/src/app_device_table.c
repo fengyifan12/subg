@@ -230,14 +230,15 @@ void app_device_table_iter_register_json(void (*cb)(const char *json_str))
                  "\"ip\":\"%s\","
                  "\"rloc16\":%u,"
                  "\"seq\":0,"
-                 "\"data\":{\"fw_ver\":\"%s\",\"hw_ver\":\"%s\"}}",
+                 "\"data\":{\"fw_ver\":\"%s\",\"hw_ver\":\"%s\",\"online\":%d}}",
                  app_device_type_to_str(d->dev_type),
                  d->dev_name,
                  d->dev_id,
                  ip_str,
                  (unsigned)d->rloc16,
                  d->fw_ver,
-                 d->hw_ver);
+                 d->hw_ver,
+                 d->online ? 1 : 0);
         cb(json_buf);
     }
 }

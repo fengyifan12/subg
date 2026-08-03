@@ -215,7 +215,15 @@ PC 发往 Leader，`data` 字段为空对象（或省略）：
 {"ver":1,"type":"QUERY_TABLE"}
 ```
 
-Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一条 `REGISTER` 格式 JSON（字段含义与第 6.1 节相同，`seq` 固定为 `0` 表示重播）。若设备表为空则无任何回复。
+Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一条 `REGISTER` 格式 JSON（字段含义与第 6.1 节相同，`seq` 固定为 `0` 表示重播）。重播时 `data` 额外携带 `online`（`1`=在线，`0`=离线），反映设备表当前在线状态。若设备表为空则无任何回复。
+
+```json
+"data": {
+  "fw_ver": "1.0.0",
+  "hw_ver": "A",
+  "online": 1
+}
+```
 
 ### 6.6 DEV_ONLINE
 
@@ -313,8 +321,8 @@ radar_01 重新入网并发送 REGISTER，Leader 发现设备表中已有该条�
 
 ### Leader 逐条重播 REGISTER（leader → PC UART，每条设备发一行）
 ```json
-{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","ip":"fd11:ab::3","rloc16":1025,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
-{"ver":1,"type":"REGISTER","dev_type":"SOCKET","dev_name":"socket_01","dev_id":"DDEEFF","ip":"fd11:ab::4","rloc16":2049,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A"}}
+{"ver":1,"type":"REGISTER","dev_type":"RADAR","dev_name":"radar_01","dev_id":"AABBCC","ip":"fd11:ab::3","rloc16":1025,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A","online":1}}
+{"ver":1,"type":"REGISTER","dev_type":"SOCKET","dev_name":"socket_01","dev_id":"DDEEFF","ip":"fd11:ab::4","rloc16":2049,"seq":0,"data":{"fw_ver":"1.0.0","hw_ver":"A","online":0}}
 ```
 
 ### 子设备立即回 ACK（child → leader → PC）

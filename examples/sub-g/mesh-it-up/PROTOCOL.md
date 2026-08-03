@@ -281,7 +281,7 @@ Leader 收到后，针对设备表中每一条有效条目，向 UART0 发送一
 
 ### 灯带调色（PC → leader → child）
 ```json
-{"ver":1,"type":"CONTROL","dev_type":"RGBCW","dev_name":"rgbcw_01","seq":13,"data":{"r":0,"g":0,"b":50}}
+{"ver":1,"type":"CONTROL","dev_type":"RGBCW","dev_name":"rgb_01","seq":13,"data":{"r":0,"g":0,"b":50}}
 ```
 
 ### 雷达配置参数下发（PC → leader → child）
